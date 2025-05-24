@@ -145,7 +145,7 @@ const translations = {
     password: "Пароль",
     enterPassword: "Введите пароль",
     loginButton: "Войти",
-    testCredentials: "Тестовые данные для входа",
+    testCredentials: "Тестовые данные для входа админа",
     registration: "Регистрация",
     confirmPassword: "Подтверждение пароля",
     register: "Зарегистрироваться",
@@ -1126,7 +1126,7 @@ const App = () => {
                         <input
                           type="email"
                           className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                          placeholder="admin@karakolbus.kg"
+                          placeholder="example@gmail.com"
                           value={loginData.email}
                           onChange={(e) => setLoginData({ ...loginData, email: e.target.value })}
                         />
@@ -1160,117 +1160,22 @@ const App = () => {
                   <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                     <p className="text-sm text-gray-600 text-center">
                       <strong>{t.testCredentials}:</strong><br />
-                      Email: admin@Karakolbus.kg<br />
+                      Email: admin@karakolbus.kg<br />
                       {t.password}: admin123
                     </p>
+                  </div>
+                  <div className="mt-4 text-center">
+                    <button
+                      className="text-blue-600 hover:text-blue-800 font-medium underline"
+                      onClick={() => setStep(12)} // Новый экран регистрации
+                    >
+                      {t.registration}
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-6 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-                <div className="p-6 bg-gradient-to-r from-green-600 to-green-700">
-                  <h2 className="text-2xl font-bold text-white text-center">{t.registration}</h2>
-                </div>
-
-                <div className="p-6">
-                  <form onSubmit={handleRegistration} className="space-y-5">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.email}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Mail size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="email"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder="example@mail.com"
-                          value={registrationData.email}
-                          onChange={(e) => setRegistrationData({ ...registrationData, email: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.firstName}</label>
-                        <input
-                          type="text"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.firstName}
-                          value={registrationData.firstName}
-                          onChange={(e) => setRegistrationData({ ...registrationData, firstName: e.target.value })}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.lastName}</label>
-                        <input
-                          type="text"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.lastName}
-                          value={registrationData.lastName}
-                          onChange={(e) => setRegistrationData({ ...registrationData, lastName: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.phone}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Phone size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="tel"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder="+996 XXX XXX XXX"
-                          value={registrationData.phone}
-                          onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.password}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="password"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.password}
-                          value={registrationData.password}
-                          onChange={(e) => setRegistrationData({ ...registrationData, password: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.confirmPassword}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="password"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.confirmPassword}
-                          value={registrationData.confirmPassword}
-                          onChange={(e) => setRegistrationData({ ...registrationData, confirmPassword: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-3 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                    >
-                      {t.register}
-                    </button>
-                  </form>
-                </div>
-              </div>
+              
             </div>
           </div>
         );
@@ -2224,7 +2129,9 @@ const App = () => {
                 >
                   {t.toMain}
                 </button>
+                
               </div>
+              
             </div>
           </div>
         );
@@ -3652,6 +3559,165 @@ const App = () => {
                 </button>
               </div>
             </div>
+          </div>
+        );
+        case 12: // Экран регистрации
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
+            <header className="bg-white shadow-sm border-b border-gray-200">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between items-center py-4">
+                  <div className="flex items-center">
+                    <AppLogo />
+                    <div className="text-2xl font-bold" style={{ display: 'none' }}>
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <button
+                      className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                      onClick={() => setShowLanguageSelector(!showLanguageSelector)}
+                    >
+                      <Globe size={20} className="text-gray-600" />
+                      <span className="text-sm uppercase font-medium">{language}</span>
+                      <ChevronDown size={16} className="text-gray-600" />
+                    </button>
+
+                    {showLanguageSelector && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                        <div className="py-2">
+                          {['ru', 'kg', 'en'].map((lang) => (
+                            <button
+                              key={lang}
+                              className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${language === lang ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
+                                }`}
+                              onClick={() => {
+                                setLanguage(lang);
+                                setShowLanguageSelector(false);
+                              }}
+                            >
+                              {lang === 'ru' ? 'Русский' : lang === 'kg' ? 'Кыргызча' : 'English'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </header>
+            <div className="mt-6 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                <div className="p-6 bg-gradient-to-r from-green-600 to-green-700">
+                  <h2 className="text-2xl font-bold text-white text-center">{t.registration}</h2>
+                </div>
+
+                <div className="p-6">
+                  <form onSubmit={handleRegistration} className="space-y-5">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.email}</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Mail size={20} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="email"
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder="example@mail.com"
+                          value={registrationData.email}
+                          onChange={(e) => setRegistrationData({ ...registrationData, email: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.firstName}</label>
+                        <input
+                          type="text"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder={t.firstName}
+                          value={registrationData.firstName}
+                          onChange={(e) => setRegistrationData({ ...registrationData, firstName: e.target.value })}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.lastName}</label>
+                        <input
+                          type="text"
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder={t.lastName}
+                          value={registrationData.lastName}
+                          onChange={(e) => setRegistrationData({ ...registrationData, lastName: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.phone}</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Phone size={20} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="tel"
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder="+996 XXX XXX XXX"
+                          value={registrationData.phone}
+                          onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.password}</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Lock size={20} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="password"
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder={t.password}
+                          value={registrationData.password}
+                          onChange={(e) => setRegistrationData({ ...registrationData, password: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.confirmPassword}</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Lock size={20} className="text-gray-400" />
+                        </div>
+                        <input
+                          type="password"
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                          placeholder={t.confirmPassword}
+                          value={registrationData.confirmPassword}
+                          onChange={(e) => setRegistrationData({ ...registrationData, confirmPassword: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-3 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                    >
+                      {t.register}
+                    </button>
+
+                    <div className="mt-4 text-center">
+  <button
+    className="text-blue-600 hover:text-blue-800 font-medium underline"
+    onClick={() => setStep(0)} // Новый экран регистрации
+  >
+    {t.login}
+  </button>
+</div>
+                  </form>
+                </div>
+              </div>
           </div>
         );
 
