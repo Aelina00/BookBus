@@ -6,7 +6,163 @@ import {
   Globe, Settings, LogOut, Help, Star, X, Eye, EyeOff,
   Info, Menu, CheckCircle, Trash2, Map, Filter, Search
 } from 'lucide-react';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+  Elements,
+  CardElement,
+  useStripe,
+  useElements
+} from '@stripe/react-stripe-js';
 import logo from './logo/logo.png'
+
+const stripePromise = loadStripe('pk_test_51RQqud08QWqL182RyMWz05HHWxXgl0qqXaPrtRXTdoWKI2zsRrKRRPUZyMOUO7Xc2P6yA0wkjPfJfvgX8Nggubqz00TSdCnE8G');
+
+const RealPaymentForm = ({ t, totalAmount, onPaymentComplete, bookingData }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState(null);
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setIsProcessing(true);
+    setPaymentError(null);
+
+    const cardElement = elements.getElement(CardElement);
+
+    try {
+      // Создание платежного намерения с метаданными
+      const response = await fetch('http://localhost:3001/api/create-payment-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: parseInt(totalAmount.split(' ')[0]),
+          currency: 'usd', // или 'kgs' если поддерживается
+          metadata: {
+            route: `${bookingData.from} → ${bookingData.to}`,
+            passenger: bookingData.passengerName,
+            seats: bookingData.seats.join(', '),
+            date: bookingData.date,
+            busNumber: bookingData.busNumber
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Ошибка сервера');
+      }
+
+      const { client_secret } = await response.json();
+
+      // РЕАЛЬНОЕ подтверждение платежа
+      const { error, paymentIntent } = await stripe.confirmCardPayment(
+        client_secret,
+        {
+          payment_method: {
+            card: cardElement,
+            billing_details: {
+              name: bookingData.passengerName,
+              email: bookingData.email, // если есть
+            },
+          },
+        }
+      );
+
+      if (error) {
+        setPaymentError(`Ошибка оплаты: ${error.message}`);
+        console.error('Ошибка Stripe:', error);
+      } else if (paymentIntent.status === 'succeeded') {
+        console.log('✅ РЕАЛЬНЫЙ ПЛАТЕЖ УСПЕШЕН:', paymentIntent);
+        alert('🎉 Оплата прошла успешно! Деньги списаны с карты.');
+        onPaymentComplete({
+          paymentIntentId: paymentIntent.id,
+          amount: paymentIntent.amount / 100,
+          currency: paymentIntent.currency
+        });
+      }
+    } catch (err) {
+      setPaymentError('Ошибка подключения к серверу оплаты');
+      console.error('Ошибка:', err);
+    }
+
+    setIsProcessing(false);
+  };
+
+  return (
+    <Elements stripe={stripePromise}>
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+        <div className="mb-6">
+          <div className="text-2xl font-bold text-green-600 mb-2">{totalAmount}</div>
+          <div className="text-lg font-semibold text-gray-800">{t.totalPayment}</div>
+          <div className="text-sm text-red-600 font-medium mt-2">
+            🔴 РЕАЛЬНАЯ ОПЛАТА - Деньги будут списаны с карты!
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Данные банковской карты
+            </label>
+            <div className="border border-gray-300 rounded-lg p-4">
+              <CardElement
+                options={{
+                  style: {
+                    base: {
+                      fontSize: '16px',
+                      color: '#374151',
+                      '::placeholder': {
+                        color: '#9CA3AF',
+                      },
+                    },
+                  },
+                }}
+              />
+            </div>
+          </div>
+
+          {paymentError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="text-red-600 text-sm">{paymentError}</div>
+            </div>
+          )}
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm">
+            <div className="font-medium text-yellow-800 mb-2">⚠️ Важно:</div>
+            <div className="text-yellow-700">
+              • Платеж будет обработан немедленно<br/>
+              • Деньги будут списаны с вашей карты<br/>
+              • Сохраните чек для отчетности<br/>
+              • Возврат возможен согласно правилам компании
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={!stripe || isProcessing}
+            className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-4 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          >
+            {isProcessing ? (
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Обработка реального платежа...
+              </div>
+            ) : (
+              `💳 ОПЛАТИТЬ ${totalAmount} (РЕАЛЬНО)`
+            )}
+          </button>
+        </form>
+      </div>
+    </Elements>
+  );
+};
 const AppLogo = ({ className = "h-10 w-auto" }) => {
   return (
     <img
@@ -316,6 +472,7 @@ const PaymentForm = ({ t, totalAmount, onPaymentComplete }) => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [testMode, setTestMode] = useState(true);
 
   const validateCard = () => {
     if (!cardData.cardNumber || !cardData.expiryDate || !cardData.cvv || !cardData.cardName) {
@@ -323,18 +480,43 @@ const PaymentForm = ({ t, totalAmount, onPaymentComplete }) => {
       return false;
     }
 
-    if (!/^\d{16}$/.test(cardData.cardNumber.replace(/\s/g, ''))) {
+    // Проверка номера карты (16 цифр)
+    const cardNumber = cardData.cardNumber.replace(/\s/g, '');
+    if (!/^\d{16}$/.test(cardNumber)) {
       alert(t.invalidCardNumber);
       return false;
     }
 
+    // Проверка даты (ММ/ГГ и не истекшая)
     if (!/^\d{2}\/\d{2}$/.test(cardData.expiryDate)) {
       alert(t.invalidExpiryDate);
       return false;
     }
 
+    const [month, year] = cardData.expiryDate.split('/').map(Number);
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear() % 100; // Последние 2 цифры года
+    const currentMonth = currentDate.getMonth() + 1;
+
+    if (year < currentYear || (year === currentYear && month < currentMonth)) {
+      alert('Карта просрочена');
+      return false;
+    }
+
+    if (month < 1 || month > 12) {
+      alert('Неверный месяц (01-12)');
+      return false;
+    }
+
+    // Проверка CVV (3-4 цифры)
     if (!/^\d{3,4}$/.test(cardData.cvv)) {
       alert(t.invalidCVV);
+      return false;
+    }
+
+    // Проверка имени (минимум 2 символа)
+    if (cardData.cardName.length < 2) {
+      alert('Введите имя на карте');
       return false;
     }
 
@@ -351,9 +533,38 @@ const PaymentForm = ({ t, totalAmount, onPaymentComplete }) => {
 
     setIsProcessing(true);
 
+    const cardNumber = cardData.cardNumber.replace(/\s/g, '');
+    
     setTimeout(() => {
-      setIsProcessing(false);
-      onPaymentComplete();
+      if (testMode) {
+        // Тестовый режим - только определенные карты
+        if (cardNumber === '4000000000000002') {
+          setIsProcessing(false);
+          alert('Платеж отклонен банком');
+          return;
+        } else if (cardNumber === '4000000000000069') {
+          setIsProcessing(false);
+          alert('Истек срок действия карты');
+          return;
+        } else if (cardNumber === '4000000000000127') {
+          setIsProcessing(false);
+          alert('Неверный код безопасности (CVC)');
+          return;
+        } else if (cardNumber === '4242424242424242') {
+          setIsProcessing(false);
+          alert(t.paymentSuccessful + ' (Тестовый режим)');
+          onPaymentComplete();
+        } else {
+          setIsProcessing(false);
+          alert('В тестовом режиме используйте тестовые карты');
+          return;
+        }
+      } else {
+        // Реальный режим - принимаем любые валидные карты
+        setIsProcessing(false);
+        alert('⚠️ ВНИМАНИЕ: Это демо-режим. Реальная оплата не производится!');
+        onPaymentComplete();
+      }
     }, 2000);
   };
 
@@ -362,6 +573,30 @@ const PaymentForm = ({ t, totalAmount, onPaymentComplete }) => {
       <div className="mb-6">
         <div className="text-2xl font-bold text-green-600 mb-2">{totalAmount}</div>
         <div className="text-lg font-semibold text-gray-800">{t.totalPayment}</div>
+        
+        {/* Переключатель режимов */}
+        <div className="mt-4 flex items-center space-x-4">
+          <label className="flex items-center">
+            <input
+              type="radio"
+              name="paymentMode"
+              checked={testMode}
+              onChange={() => setTestMode(true)}
+              className="mr-2"
+            />
+            <span className="text-sm">🧪 Тестовый режим</span>
+          </label>
+          <label className="flex items-center">
+            <input
+              type="radio"
+              name="paymentMode"
+              checked={!testMode}
+              onChange={() => setTestMode(false)}
+              className="mr-2"
+            />
+            <span className="text-sm">💳 Демо режим (любая карта)</span>
+          </label>
+        </div>
       </div>
 
       <div className="space-y-5">
@@ -419,6 +654,29 @@ const PaymentForm = ({ t, totalAmount, onPaymentComplete }) => {
             onChange={(e) => setCardData({ ...cardData, cardName: e.target.value.toUpperCase() })}
           />
         </div>
+
+        {/* Блок с тестовыми картами */}
+         {testMode ? (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm">
+            <div className="font-medium text-blue-800 mb-2">🧪 Тестовые карты:</div>
+            <div className="text-blue-700 space-y-1">
+              <div><strong>4242 4242 4242 4242</strong> - Успешная оплата</div>
+              <div><strong>4000 0000 0000 0002</strong> - Карта отклонена</div>
+              <div><strong>4000 0000 0000 0069</strong> - Истек срок карты</div>
+              <div><strong>4000 0000 0000 0127</strong> - Неверный CVC</div>
+            </div>
+            <div className="text-blue-600 mt-2 text-xs">
+              CVC: любые 3 цифры • Дата: любая будущая
+            </div>
+          </div>
+        ) : (
+          <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-sm">
+            <div className="font-medium text-orange-800 mb-2">💳 Демо режим:</div>
+            <div className="text-orange-700">
+              Можете использовать любую корректную карту. Реальная оплата НЕ производится - это только демонстрация интерфейса.
+            </div>
+          </div>
+        )}
 
         <div className="flex items-start space-x-3 pt-4">
           <input
@@ -523,7 +781,7 @@ const App = () => {
     departureTime: '',
     arrivalTime: '',
     busNumber: '',
-    totalSeats: 51,
+    totalSeats: 51, // Для автобуса
     vehicleType: 'автобус'
   });
 
@@ -629,9 +887,12 @@ const App = () => {
 
   // Применение фильтров
   const applyFilters = () => {
-    let filtered = bookingHistory.filter(booking =>
-      booking.userId === currentUser?.id
-    );
+    let filtered = bookingHistory;
+
+    // Для админа показываем ВСЕ бронирования, для обычного пользователя только свои
+    if (!isAdmin) {
+      filtered = filtered.filter(booking => booking.userId === currentUser?.id);
+    }
 
     if (filterOptions.date) {
       filtered = filtered.filter(booking => booking.date === filterOptions.date);
@@ -658,6 +919,18 @@ const App = () => {
   useEffect(() => {
     applyFilters();
   }, [filterOptions, adminTab, currentUser]);
+
+
+  useEffect(() => {
+    // Автоматически меняем количество мест при смене типа транспорта
+    if (newBusData.vehicleType === 'маршрутка') {
+      setNewBusData(prev => ({ ...prev, totalSeats: 17 }));
+    } else if (newBusData.vehicleType === 'автобус') {
+      setNewBusData(prev => ({ ...prev, totalSeats: 51 }));
+    }
+
+  }, [newBusData.vehicleType]);
+
 
   // Функции для работы с автобусами
   const getAvailableBuses = (routeFrom, routeTo, selectedDate) => {
@@ -886,6 +1159,9 @@ const App = () => {
       });
     });
 
+    // Определяем количество мест в зависимости от типа транспорта
+    const totalSeats = newBusData.vehicleType === 'маршрутка' ? 17 : 51;
+
     const newBus = {
       id: maxBusId + 1,
       routeId: routeId,
@@ -893,8 +1169,8 @@ const App = () => {
       arrivalTime: newBusData.arrivalTime,
       busNumber: newBusData.busNumber,
       carrier: "ОсОО \"Karakol Bus\"",
-      totalSeats: parseInt(newBusData.totalSeats),
-      availableSeats: parseInt(newBusData.totalSeats),
+      totalSeats: totalSeats,
+      availableSeats: totalSeats,
       vehicleType: newBusData.vehicleType
     };
 
@@ -1175,7 +1451,7 @@ const App = () => {
                 </div>
               </div>
 
-              
+
             </div>
           </div>
         );
@@ -1710,64 +1986,152 @@ const App = () => {
                   {isBuyingReturn ? `${t.returnTrip}: ${t.selectSeat}` : t.selectSeat}
                 </h2>
 
-                {/* Схема автобуса */}
+                {/* Схема автобуса/маршрутки */}
                 <div className="mb-6">
-                  {/* Передняя часть */}
-                  <div className="flex justify-center mb-4">
-                    <div className="w-32 h-8 bg-gray-200 rounded-t-lg flex items-center justify-center text-xs text-gray-500 font-medium">
-                      {t.front}
-                    </div>
-                  </div>
+                  {selectedBus?.vehicleType === 'маршрутка' ? (
+                    // Схема маршрутки - 17 мест
+                    <>
+                      {/* Передняя часть */}
+                      <div className="flex justify-center mb-4">
+                        <div className="w-32 h-8 bg-gray-200 rounded-t-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+                          {t.front}
+                        </div>
+                      </div>
 
-                  {/* Водитель */}
-                  <div className="flex justify-center mb-4">
-                    <div className="w-12 h-12 bg-gray-300 rounded-lg flex items-center justify-center text-xs text-gray-600 font-medium">
-                      🚗
-                    </div>
-                  </div>
+                      {/* Водитель */}
+                      <div className="flex justify-start ml-8 mb-4">
+                        <div className="w-12 h-12 bg-gray-300 rounded-lg flex items-center justify-center text-xs text-gray-600 font-medium">
+                          🚗
+                        </div>
+                      </div>
 
-                  {/* Комфортные места (1-4) */}
-                  <div className="mb-4 flex justify-center">
-                    <div className="grid grid-cols-5 gap-2">
-                      {[1, 2, 3, 4].map((seatNum, index) => {
-                        const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
-                        const isBooked = isSeatBooked(
-                          isBuyingReturn ? returnBus?.id : selectedBus?.id,
-                          isBuyingReturn ? returnDate : date,
-                          seatNum
-                        );
+                      {/* 5 рядов по схеме 2+1 (места 1-15) + 2 места сзади */}
+                      {Array.from({ length: 5 }, (_, rowIndex) => {
+                        const startSeat = 1 + rowIndex * 3;
 
                         return (
-                          <div key={seatNum}>
-                            {index === 2 && <div className="w-12"></div>}
-                            <button
-                              className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
-                                ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
-                                : isSelected
-                                  ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                  : 'bg-green-50 border-green-300 text-green-600 hover:bg-green-100 hover:border-green-400 hover:transform hover:scale-105'
-                                }`}
-                              onClick={() => !isBooked && handleSeatSelection(seatNum)}
-                              disabled={isBooked}
-                            >
-                              {isBooked ? <Lock size={16} /> : seatNum}
-                            </button>
+                          <div key={rowIndex} className="mb-2 flex justify-center">
+                            <div className="grid grid-cols-4 gap-2">
+                              {/* Левая сторона - 2 места */}
+                              {[startSeat, startSeat + 1].map((seatNum) => {
+                                const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+                                const isBooked = isSeatBooked(
+                                  isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                                  isBuyingReturn ? returnDate : date,
+                                  seatNum
+                                );
+
+                                return (
+                                  <button
+                                    key={seatNum}
+                                    className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                                      ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                                      : isSelected
+                                        ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                                        : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                      }`}
+                                    onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                                    disabled={isBooked}
+                                  >
+                                    {isBooked ? <Lock size={16} /> : seatNum}
+                                  </button>
+                                );
+                              })}
+
+                              {/* Проход */}
+                              <div className="w-6"></div>
+
+                              {/* Правая сторона - 1 место */}
+                              {(() => {
+                                const seatNum = startSeat + 2;
+                                const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+                                const isBooked = isSeatBooked(
+                                  isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                                  isBuyingReturn ? returnDate : date,
+                                  seatNum
+                                );
+
+                                return (
+                                  <button
+                                    key={seatNum}
+                                    className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                                      ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                                      : isSelected
+                                        ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                                        : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                      }`}
+                                    onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                                    disabled={isBooked}
+                                  >
+                                    {isBooked ? <Lock size={16} /> : seatNum}
+                                  </button>
+                                );
+                              })()}
+                            </div>
                           </div>
                         );
                       })}
-                    </div>
-                  </div>
 
-                  {/* Стандартные места */}
-                  {Array.from({ length: 12 }, (_, rowIndex) => {
-                    const startSeat = 5 + rowIndex * 4;
-                    const seatsInRow = rowIndex === 11 ? 2 : 4; // Последний ряд имеет только 2 места слева
+                      {/* Задний ряд маршрутки - места 16, 17 */}
+                      <div className="mb-4 flex justify-center">
+                        <div className="grid grid-cols-4 gap-2">
+                          {[16, 17].map((seatNum) => {
+                            const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+                            const isBooked = isSeatBooked(
+                              isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                              isBuyingReturn ? returnDate : date,
+                              seatNum
+                            );
 
-                    return (
-                      <div key={rowIndex} className="mb-2 flex justify-center">
+                            return (
+                              <button
+                                key={seatNum}
+                                className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                                  ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                                  : isSelected
+                                    ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                                    : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                  }`}
+                                onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                                disabled={isBooked}
+                              >
+                                {isBooked ? <Lock size={16} /> : seatNum}
+                              </button>
+                            );
+                          })}
+                          <div className="w-6"></div>
+                          <div className="w-12"></div>
+                        </div>
+                      </div>
+
+                      {/* Задняя часть */}
+                      <div className="flex justify-center mt-4">
+                        <div className="w-32 h-8 bg-gray-200 rounded-b-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+                          {t.back}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    // Схема автобуса - 51 место (ваша текущая схема)
+                    <>
+                      {/* Передняя часть */}
+                      <div className="flex justify-center mb-4">
+                        <div className="w-32 h-8 bg-gray-200 rounded-t-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+                          {t.front}
+                        </div>
+                      </div>
+
+                      {/* Водитель */}
+                      <div className="flex justify-center mb-4">
+                        <div className="w-12 h-12 bg-gray-300 rounded-lg flex items-center justify-center text-xs text-gray-600 font-medium">
+                          🚗
+                        </div>
+                      </div>
+
+                      {/* Комфортные места (1-4) */}
+                      <div className="mb-4 flex justify-center">
                         <div className="grid grid-cols-5 gap-2">
-                          {Array.from({ length: seatsInRow }, (_, seatIndex) => {
-                            const seatNum = startSeat + seatIndex;
+                          {[1, 2, 3, 4].map((seatNum, index) => {
                             const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
                             const isBooked = isSeatBooked(
                               isBuyingReturn ? returnBus?.id : selectedBus?.id,
@@ -1777,13 +2141,13 @@ const App = () => {
 
                             return (
                               <div key={seatNum}>
-                                {seatIndex === 2 && <div className="w-12"></div>}
+                                {index === 2 && <div className="w-12"></div>}
                                 <button
                                   className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
                                     ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
                                     : isSelected
                                       ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                      : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                      : 'bg-green-50 border-green-300 text-green-600 hover:bg-green-100 hover:border-green-400 hover:transform hover:scale-105'
                                     }`}
                                   onClick={() => !isBooked && handleSeatSelection(seatNum)}
                                   disabled={isBooked}
@@ -1795,45 +2159,85 @@ const App = () => {
                           })}
                         </div>
                       </div>
-                    );
-                  })}
 
-                  {/* Последний ряд (47-51) */}
-                  <div className="mb-4 flex justify-center">
-                    <div className="grid grid-cols-5 gap-2">
-                      {[47, 48, 49, 50, 51].map((seatNum) => {
-                        const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
-                        const isBooked = isSeatBooked(
-                          isBuyingReturn ? returnBus?.id : selectedBus?.id,
-                          isBuyingReturn ? returnDate : date,
-                          seatNum
-                        );
+                      {/* Стандартные места */}
+                      {Array.from({ length: 12 }, (_, rowIndex) => {
+                        const startSeat = 5 + rowIndex * 4;
+                        const seatsInRow = rowIndex === 11 ? 2 : 4;
 
                         return (
-                          <button
-                            key={seatNum}
-                            className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
-                              ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
-                              : isSelected
-                                ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
-                              }`}
-                            onClick={() => !isBooked && handleSeatSelection(seatNum)}
-                            disabled={isBooked}
-                          >
-                            {isBooked ? <Lock size={16} /> : seatNum}
-                          </button>
+                          <div key={rowIndex} className="mb-2 flex justify-center">
+                            <div className="grid grid-cols-5 gap-2">
+                              {Array.from({ length: seatsInRow }, (_, seatIndex) => {
+                                const seatNum = startSeat + seatIndex;
+                                const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+                                const isBooked = isSeatBooked(
+                                  isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                                  isBuyingReturn ? returnDate : date,
+                                  seatNum
+                                );
+
+                                return (
+                                  <div key={seatNum}>
+                                    {seatIndex === 2 && <div className="w-12"></div>}
+                                    <button
+                                      className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                                        ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                                        : isSelected
+                                          ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                                          : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                        }`}
+                                      onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                                      disabled={isBooked}
+                                    >
+                                      {isBooked ? <Lock size={16} /> : seatNum}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
                         );
                       })}
-                    </div>
-                  </div>
 
-                  {/* Задняя часть */}
-                  <div className="flex justify-center mt-4">
-                    <div className="w-32 h-8 bg-gray-200 rounded-b-lg flex items-center justify-center text-xs text-gray-500 font-medium">
-                      {t.back}
-                    </div>
-                  </div>
+                      {/* Последний ряд (47-51) */}
+                      <div className="mb-4 flex justify-center">
+                        <div className="grid grid-cols-5 gap-2">
+                          {[47, 48, 49, 50, 51].map((seatNum) => {
+                            const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+                            const isBooked = isSeatBooked(
+                              isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                              isBuyingReturn ? returnDate : date,
+                              seatNum
+                            );
+
+                            return (
+                              <button
+                                key={seatNum}
+                                className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                                  ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                                  : isSelected
+                                    ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                                    : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                  }`}
+                                onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                                disabled={isBooked}
+                              >
+                                {isBooked ? <Lock size={16} /> : seatNum}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Задняя часть */}
+                      <div className="flex justify-center mt-4">
+                        <div className="w-32 h-8 bg-gray-200 rounded-b-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+                          {t.back}
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   {/* Легенда */}
                   <div className="mt-6 grid grid-cols-2 gap-3 text-xs">
@@ -2129,9 +2533,9 @@ const App = () => {
                 >
                   {t.toMain}
                 </button>
-                
+
               </div>
-              
+
             </div>
           </div>
         );
@@ -3093,10 +3497,13 @@ const App = () => {
                               type="number"
                               className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                               value={newBusData.totalSeats}
-                              onChange={(e) => setNewBusData({ ...newBusData, totalSeats: parseInt(e.target.value) || 51 })}
+                              onChange={(e) => setNewBusData({ ...newBusData, totalSeats: parseInt(e.target.value) || (newBusData.vehicleType === 'маршрутка' ? 17 : 51) })}
                               min="1"
-                              max="51"
+                              max="60"
                             />
+                            <div className="text-xs text-gray-500 mt-1">
+                              {t.automatically}: {newBusData.vehicleType === 'маршрутка' ? t.seats17 : t.seats51}
+                            </div>
                           </div>
 
                           <div>
@@ -3328,6 +3735,11 @@ const App = () => {
                             <div>
                               <div className="font-bold text-lg text-gray-800">{review.userName}</div>
                               <div className="text-sm text-gray-500">{review.route} • {review.date}</div>
+                              {isAdmin && (
+                                <div className="text-xs text-blue-600 mt-1">
+                                  ID пользователя: {review.userId}
+                                </div>
+                              )}
                             </div>
                             <div className="flex">
                               {[...Array(review.rating)].map((_, i) => (
@@ -3372,7 +3784,17 @@ const App = () => {
                               </div>
                             </div>
                           </div>
-
+                          {isAdmin && (
+                            <div className="bg-yellow-50 rounded-lg p-3 mb-4">
+                              <div className="text-gray-600 mb-1">👤 Информация о клиенте:</div>
+                              <div className="font-semibold">
+                                {(() => {
+                                  const user = users.find(u => u.id === booking.userId);
+                                  return user ? `${user.firstName} ${user.lastName} (${user.email})` : 'Пользователь не найден';
+                                })()}
+                              </div>
+                            </div>
+                          )}
                           <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
                             <div className="bg-gray-50 rounded-lg p-3">
                               <div className="text-gray-600 mb-1">{t.passenger}:</div>
@@ -3561,7 +3983,7 @@ const App = () => {
             </div>
           </div>
         );
-        case 12: // Экран регистрации
+      case 12: // Экран регистрации
         return (
           <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100">
             <header className="bg-white shadow-sm border-b border-gray-200">
@@ -3606,118 +4028,118 @@ const App = () => {
               </div>
             </header>
             <div className="mt-6 bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-                <div className="p-6 bg-gradient-to-r from-green-600 to-green-700">
-                  <h2 className="text-2xl font-bold text-white text-center">{t.registration}</h2>
-                </div>
-
-                <div className="p-6">
-                  <form onSubmit={handleRegistration} className="space-y-5">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.email}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Mail size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="email"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder="example@mail.com"
-                          value={registrationData.email}
-                          onChange={(e) => setRegistrationData({ ...registrationData, email: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.firstName}</label>
-                        <input
-                          type="text"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.firstName}
-                          value={registrationData.firstName}
-                          onChange={(e) => setRegistrationData({ ...registrationData, firstName: e.target.value })}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">{t.lastName}</label>
-                        <input
-                          type="text"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.lastName}
-                          value={registrationData.lastName}
-                          onChange={(e) => setRegistrationData({ ...registrationData, lastName: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.phone}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Phone size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="tel"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder="+996 XXX XXX XXX"
-                          value={registrationData.phone}
-                          onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.password}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="password"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.password}
-                          value={registrationData.password}
-                          onChange={(e) => setRegistrationData({ ...registrationData, password: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.confirmPassword}</label>
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Lock size={20} className="text-gray-400" />
-                        </div>
-                        <input
-                          type="password"
-                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
-                          placeholder={t.confirmPassword}
-                          value={registrationData.confirmPassword}
-                          onChange={(e) => setRegistrationData({ ...registrationData, confirmPassword: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-3 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-                    >
-                      {t.register}
-                    </button>
-
-                    <div className="mt-4 text-center">
-  <button
-    className="text-blue-600 hover:text-blue-800 font-medium underline"
-    onClick={() => setStep(0)} // Новый экран регистрации
-  >
-    {t.login}
-  </button>
-</div>
-                  </form>
-                </div>
+              <div className="p-6 bg-gradient-to-r from-green-600 to-green-700">
+                <h2 className="text-2xl font-bold text-white text-center">{t.registration}</h2>
               </div>
+
+              <div className="p-6">
+                <form onSubmit={handleRegistration} className="space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t.email}</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail size={20} className="text-gray-400" />
+                      </div>
+                      <input
+                        type="email"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder="example@mail.com"
+                        value={registrationData.email}
+                        onChange={(e) => setRegistrationData({ ...registrationData, email: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.firstName}</label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder={t.firstName}
+                        value={registrationData.firstName}
+                        onChange={(e) => setRegistrationData({ ...registrationData, firstName: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.lastName}</label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder={t.lastName}
+                        value={registrationData.lastName}
+                        onChange={(e) => setRegistrationData({ ...registrationData, lastName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t.phone}</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Phone size={20} className="text-gray-400" />
+                      </div>
+                      <input
+                        type="tel"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder="+996 XXX XXX XXX"
+                        value={registrationData.phone}
+                        onChange={(e) => setRegistrationData({ ...registrationData, phone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t.password}</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock size={20} className="text-gray-400" />
+                      </div>
+                      <input
+                        type="password"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder={t.password}
+                        value={registrationData.password}
+                        onChange={(e) => setRegistrationData({ ...registrationData, password: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t.confirmPassword}</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock size={20} className="text-gray-400" />
+                      </div>
+                      <input
+                        type="password"
+                        className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200"
+                        placeholder={t.confirmPassword}
+                        value={registrationData.confirmPassword}
+                        onChange={(e) => setRegistrationData({ ...registrationData, confirmPassword: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-3 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                  >
+                    {t.register}
+                  </button>
+
+                  <div className="mt-4 text-center">
+                    <button
+                      className="text-blue-600 hover:text-blue-800 font-medium underline"
+                      onClick={() => setStep(0)} // Новый экран регистрации
+                    >
+                      {t.login}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
           </div>
         );
 
