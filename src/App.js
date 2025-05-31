@@ -2114,129 +2114,309 @@ const App = () => {
                   ) : (
                     // Схема автобуса - 51 место (ваша текущая схема)
                     <>
-                      {/* Передняя часть */}
-                      <div className="flex justify-center mb-4">
-                        <div className="w-32 h-8 bg-gray-200 rounded-t-lg flex items-center justify-center text-xs text-gray-500 font-medium">
-                          {t.front}
-                        </div>
-                      </div>
+  {/* Передняя часть */}
+  <div className="flex justify-center mb-4">
+    <div className="w-32 h-8 bg-gray-200 rounded-t-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+      {t.front}
+    </div>
+  </div>
 
-                      {/* Водитель */}
-                      <div className="flex justify-center mb-4">
-                        <div className="w-12 h-12 bg-gray-300 rounded-lg flex items-center justify-center text-xs text-gray-600 font-medium">
-                          🚗
-                        </div>
-                      </div>
+  {/* Водитель */}
+  <div className="flex justify-center mb-4">
+    <div className="w-12 h-12 bg-gray-300 rounded-lg flex items-center justify-center text-xs text-gray-600 font-medium">
+      🚗
+    </div>
+  </div>
 
-                      {/* Комфортные места (1-4) */}
-                      <div className="mb-4 flex justify-center">
-                        <div className="grid grid-cols-5 gap-2">
-                          {[1, 2, 3, 4].map((seatNum, index) => {
-                            const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
-                            const isBooked = isSeatBooked(
-                              isBuyingReturn ? returnBus?.id : selectedBus?.id,
-                              isBuyingReturn ? returnDate : date,
-                              seatNum
-                            );
+  {/* Комфортные места (1-4) с проходом между 2 и 4 */}
+  <div className="mb-4 flex justify-center">
+    <div className="flex gap-2 items-center">
+      {/* Места 1-2 */}
+      <div className="flex gap-2">
+        {[1, 2].map((seatNum) => {
+          const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+          const isBooked = isSeatBooked(
+            isBuyingReturn ? returnBus?.id : selectedBus?.id,
+            isBuyingReturn ? returnDate : date,
+            seatNum
+          );
 
-                            return (
-                              <div key={seatNum}>
-                                {index === 2 && <div className="w-12"></div>}
-                                <button
-                                  className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
-                                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
-                                    : isSelected
-                                      ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                      : 'bg-green-50 border-green-300 text-green-600 hover:bg-green-100 hover:border-green-400 hover:transform hover:scale-105'
-                                    }`}
-                                  onClick={() => !isBooked && handleSeatSelection(seatNum)}
-                                  disabled={isBooked}
-                                >
-                                  {isBooked ? <Lock size={16} /> : seatNum}
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+          return (
+            <button
+              key={seatNum}
+              className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                : isSelected
+                  ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                  : 'bg-green-50 border-green-300 text-green-600 hover:bg-green-100 hover:border-green-400 hover:transform hover:scale-105'
+                }`}
+              onClick={() => !isBooked && handleSeatSelection(seatNum)}
+              disabled={isBooked}
+            >
+              {isBooked ? <Lock size={16} /> : seatNum}
+            </button>
+          );
+        })}
+      </div>
+      
+      {/* Проход */}
+      <div className="w-8"></div>
+      
+      {/* Места 3-4 */}
+      <div className="flex gap-2">
+        {[3, 4].map((seatNum) => {
+          const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+          const isBooked = isSeatBooked(
+            isBuyingReturn ? returnBus?.id : selectedBus?.id,
+            isBuyingReturn ? returnDate : date,
+            seatNum
+          );
 
-                      {/* Стандартные места */}
-                      {Array.from({ length: 12 }, (_, rowIndex) => {
-                        const startSeat = 5 + rowIndex * 4;
-                        const seatsInRow = rowIndex === 11 ? 2 : 4;
+          return (
+            <button
+              key={seatNum}
+              className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                : isSelected
+                  ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                  : 'bg-green-50 border-green-300 text-green-600 hover:bg-green-100 hover:border-green-400 hover:transform hover:scale-105'
+                }`}
+              onClick={() => !isBooked && handleSeatSelection(seatNum)}
+              disabled={isBooked}
+            >
+              {isBooked ? <Lock size={16} /> : seatNum}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </div>
 
-                        return (
-                          <div key={rowIndex} className="mb-2 flex justify-center">
-                            <div className="grid grid-cols-5 gap-2">
-                              {Array.from({ length: seatsInRow }, (_, seatIndex) => {
-                                const seatNum = startSeat + seatIndex;
-                                const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
-                                const isBooked = isSeatBooked(
-                                  isBuyingReturn ? returnBus?.id : selectedBus?.id,
-                                  isBuyingReturn ? returnDate : date,
-                                  seatNum
-                                );
+  {/* Стандартные места 5-22 с проходом между 6 и 7 */}
+  {Array.from({ length: 5 }, (_, rowIndex) => {
+    const startSeat = 5 + rowIndex * 4;
+    const seatsConfig = rowIndex === 0 
+      ? [[5, 6], [7, 8]] // Первый ряд с проходом между 6 и 7
+      : [[startSeat, startSeat + 1], [startSeat + 2, startSeat + 3]]; // Остальные ряды
 
-                                return (
-                                  <div key={seatNum}>
-                                    {seatIndex === 2 && <div className="w-12"></div>}
-                                    <button
-                                      className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
-                                        ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
-                                        : isSelected
-                                          ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                          : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
-                                        }`}
-                                      onClick={() => !isBooked && handleSeatSelection(seatNum)}
-                                      disabled={isBooked}
-                                    >
-                                      {isBooked ? <Lock size={16} /> : seatNum}
-                                    </button>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
+    return (
+      <div key={rowIndex} className="mb-2 flex justify-center">
+        <div className="flex gap-2 items-center">
+          {/* Левая пара мест */}
+          <div className="flex gap-2">
+            {seatsConfig[0].map((seatNum) => {
+              const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+              const isBooked = isSeatBooked(
+                isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                isBuyingReturn ? returnDate : date,
+                seatNum
+              );
 
-                      {/* Последний ряд (47-51) */}
-                      <div className="mb-4 flex justify-center">
-                        <div className="grid grid-cols-5 gap-2">
-                          {[47, 48, 49, 50, 51].map((seatNum) => {
-                            const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
-                            const isBooked = isSeatBooked(
-                              isBuyingReturn ? returnBus?.id : selectedBus?.id,
-                              isBuyingReturn ? returnDate : date,
-                              seatNum
-                            );
+              return (
+                <button
+                  key={seatNum}
+                  className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                    : isSelected
+                      ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                      : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                    }`}
+                  onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                  disabled={isBooked}
+                >
+                  {isBooked ? <Lock size={16} /> : seatNum}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Проход */}
+          <div className="w-8"></div>
+          
+          {/* Правая пара мест */}
+          <div className="flex gap-2">
+            {seatsConfig[1].map((seatNum) => {
+              const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+              const isBooked = isSeatBooked(
+                isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                isBuyingReturn ? returnDate : date,
+                seatNum
+              );
 
-                            return (
-                              <button
-                                key={seatNum}
-                                className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
-                                  ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
-                                  : isSelected
-                                    ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                    : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
-                                  }`}
-                                onClick={() => !isBooked && handleSeatSelection(seatNum)}
-                                disabled={isBooked}
-                              >
-                                {isBooked ? <Lock size={16} /> : seatNum}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+              return (
+                <button
+                  key={seatNum}
+                  className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                    : isSelected
+                      ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                      : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                    }`}
+                  onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                  disabled={isBooked}
+                >
+                  {isBooked ? <Lock size={16} /> : seatNum}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  })}
 
-                      {/* Задняя часть */}
-                      <div className="flex justify-center mt-4">
-                        <div className="w-32 h-8 bg-gray-200 rounded-b-lg flex items-center justify-center text-xs text-gray-500 font-medium">
-                          {t.back}
-                        </div>
-                      </div>
-                    </>
+  {/* Места 25-26 (отдельный ряд только слева) */}
+  <div className="mb-2 flex justify-center">
+    <div className="flex gap-2 items-center">
+      {/* Только левая пара мест 25-26 */}
+      <div className="flex gap-2">
+        {[25, 26].map((seatNum) => {
+          const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+          const isBooked = isSeatBooked(
+            isBuyingReturn ? returnBus?.id : selectedBus?.id,
+            isBuyingReturn ? returnDate : date,
+            seatNum
+          );
+
+          return (
+            <button
+              key={seatNum}
+              className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                : isSelected
+                  ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                  : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                }`}
+              onClick={() => !isBooked && handleSeatSelection(seatNum)}
+              disabled={isBooked}
+            >
+              {isBooked ? <Lock size={16} /> : seatNum}
+            </button>
+          );
+        })}
+      </div>
+      
+      {/* Проход справа (пустое место) */}
+      <div className="w-8"></div>
+      <div className="w-12 h-12"></div>
+      <div className="w-12 h-12"></div>
+    </div>
+  </div>
+
+  {/* Вертикальный проход */}
+
+
+  {/* Стандартные места 27-44 */}
+  {Array.from({ length: 5 }, (_, rowIndex) => {
+    const startSeat = 27 + rowIndex * 4;
+
+    return (
+      <div key={rowIndex} className="mb-2 flex justify-center">
+        <div className="flex gap-2 items-center">
+          {/* Левая пара мест */}
+          <div className="flex gap-2">
+            {Array.from({ length: 2 }, (_, seatIndex) => {
+              const seatNum = startSeat + seatIndex;
+              const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+              const isBooked = isSeatBooked(
+                isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                isBuyingReturn ? returnDate : date,
+                seatNum
+              );
+
+              return (
+                <button
+                  key={seatNum}
+                  className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                    : isSelected
+                      ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                      : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                    }`}
+                  onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                  disabled={isBooked}
+                >
+                  {isBooked ? <Lock size={16} /> : seatNum}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Проход */}
+          <div className="w-8"></div>
+          
+          {/* Правая пара мест */}
+          <div className="flex gap-2">
+            {Array.from({ length: 2 }, (_, seatIndex) => {
+              const seatNum = startSeat + 2 + seatIndex;
+              const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+              const isBooked = isSeatBooked(
+                isBuyingReturn ? returnBus?.id : selectedBus?.id,
+                isBuyingReturn ? returnDate : date,
+                seatNum
+              );
+
+              return (
+                <button
+                  key={seatNum}
+                  className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+                    ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+                    : isSelected
+                      ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                      : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                    }`}
+                  onClick={() => !isBooked && handleSeatSelection(seatNum)}
+                  disabled={isBooked}
+                >
+                  {isBooked ? <Lock size={16} /> : seatNum}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  })}
+
+
+
+  {/* Последний ряд (47-51) без прохода */}
+  <div className="mb-4 flex justify-center">
+    <div className="flex gap-2">
+      {[47, 48, 49, 50, 51].map((seatNum) => {
+        const isSelected = isBuyingReturn ? returnSeats.includes(seatNum) : selectedSeats.includes(seatNum);
+        const isBooked = isSeatBooked(
+          isBuyingReturn ? returnBus?.id : selectedBus?.id,
+          isBuyingReturn ? returnDate : date,
+          seatNum
+        );
+
+        return (
+          <button
+            key={seatNum}
+            className={`w-12 h-12 border-2 rounded-lg flex items-center justify-center text-sm font-semibold transition-all duration-200 ${isBooked
+              ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
+              : isSelected
+                ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
+                : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+              }`}
+            onClick={() => !isBooked && handleSeatSelection(seatNum)}
+            disabled={isBooked}
+          >
+            {isBooked ? <Lock size={16} /> : seatNum}
+          </button>
+        );
+      })}
+    </div>
+  </div>
+
+  {/* Задняя часть */}
+  <div className="flex justify-center mt-4">
+    <div className="w-32 h-8 bg-gray-200 rounded-b-lg flex items-center justify-center text-xs text-gray-500 font-medium">
+      {t.back}
+    </div>
+  </div>
+</>
                   )}
 
                   {/* Легенда */}
