@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Lock, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
-import { authAPI } from '../../services/api';
 
 const PhoneAuth = ({ onAuthSuccess, onBack }) => {
-  const [step, setStep] = useState('phone'); // 'phone', 'otp', 'reset-password'
+  const [step, setStep] = useState('phone'); // 'phone', 'otp', 'create-password'
   const [phone, setPhone] = useState('');
   const [otp, setOTP] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -47,7 +46,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     return phoneRegex.test(phone);
   };
 
-  // Отправка OTP
+  // Отправка OTP (заглушка для разработки)
   const sendOTP = async () => {
     if (!isValidPhone(phone)) {
       setError('Введите корректный номер телефона');
@@ -58,13 +57,17 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      await authAPI.sendOTP(phone);
-      setStep('otp');
-      setTimer(60);
-      setCanResendOTP(false);
+      // Заглушка для разработки - показываем код в консоли
+      console.log(`SMS код для ${phone}: 1234`);
+      
+      setTimeout(() => {
+        setStep('otp');
+        setTimer(60);
+        setCanResendOTP(false);
+        setIsLoading(false);
+      }, 1000);
     } catch (error) {
-      setError(error.response?.data?.message || 'Ошибка отправки SMS');
-    } finally {
+      setError('Ошибка отправки SMS');
       setIsLoading(false);
     }
   };
@@ -75,10 +78,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     
     setIsLoading(true);
     try {
-      await authAPI.sendOTP(phone);
-      setTimer(60);
-      setCanResendOTP(false);
-      setError('');
+      await sendOTP();
     } catch (error) {
       setError('Ошибка повторной отправки SMS');
     } finally {
@@ -97,20 +97,31 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      const response = await authAPI.verifyOTP(phone, otp);
-      
-      if (response.data.isNewUser) {
-        // Новый пользователь - направляем на создание пароля
-        setStep('create-password');
-      } else {
-        // Существующий пользователь - вход выполнен
-        localStorage.setItem('authToken', response.data.token);
-        localStorage.setItem('currentUser', JSON.stringify(response.data.user));
-        onAuthSuccess(response.data.user);
-      }
+      // Заглушка для разработки
+      setTimeout(() => {
+        if (otp === '1234') {
+          // Проверяем, админ ли это
+          if (phone === '+996555123456') {
+            // Админ - сразу входим
+            const user = {
+              id: 1,
+              phone: phone,
+              firstName: 'Админ',
+              lastName: 'Системы',
+              role: 'admin'
+            };
+            onAuthSuccess(user);
+          } else {
+            // Новый пользователь - создаем аккаунт
+            setStep('create-password');
+          }
+        } else {
+          setError('Неверный код');
+        }
+        setIsLoading(false);
+      }, 1000);
     } catch (error) {
-      setError(error.response?.data?.message || 'Неверный код');
-    } finally {
+      setError('Ошибка проверки кода');
       setIsLoading(false);
     }
   };
@@ -131,44 +142,19 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      const response = await authAPI.resetPassword(phone, newPassword, otp);
-      localStorage.setItem('authToken', response.data.token);
-      localStorage.setItem('currentUser', JSON.stringify(response.data.user));
-      onAuthSuccess(response.data.user);
+      setTimeout(() => {
+        const user = {
+          id: Date.now(),
+          phone: phone,
+          firstName: 'Пользователь',
+          lastName: '',
+          role: 'user'
+        };
+        onAuthSuccess(user);
+        setIsLoading(false);
+      }, 1000);
     } catch (error) {
-      setError(error.response?.data?.message || 'Ошибка создания аккаунта');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Сброс пароля
-  const resetPassword = async () => {
-    if (newPassword.length < 6) {
-      setError('Пароль должен содержать минимум 6 символов');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('Пароли не совпадают');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      await authAPI.resetPassword(phone, newPassword, otp);
-      setError('');
-      alert('Пароль успешно изменен! Войдите с новым паролем.');
-      setStep('phone');
-      setPhone('');
-      setOTP('');
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (error) {
-      setError(error.response?.data?.message || 'Ошибка изменения пароля');
-    } finally {
+      setError('Ошибка создания аккаунта');
       setIsLoading(false);
     }
   };
@@ -180,12 +166,11 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
           {/* Header */}
           <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700">
             <div className="flex items-center">
-              {(step === 'otp' || step === 'create-password' || step === 'reset-password') && (
+              {(step === 'otp' || step === 'create-password') && (
                 <button
                   onClick={() => {
                     if (step === 'otp') setStep('phone');
                     else if (step === 'create-password') setStep('otp');
-                    else if (step === 'reset-password') setStep('otp');
                   }}
                   className="mr-4 p-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition-colors"
                 >
@@ -197,13 +182,11 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                   {step === 'phone' && 'Вход в систему'}
                   {step === 'otp' && 'Подтверждение'}
                   {step === 'create-password' && 'Создание аккаунта'}
-                  {step === 'reset-password' && 'Новый пароль'}
                 </h1>
                 <p className="text-blue-100 text-sm mt-1">
                   {step === 'phone' && 'Введите номер телефона'}
                   {step === 'otp' && `Код отправлен на ${phone}`}
                   {step === 'create-password' && 'Придумайте пароль'}
-                  {step === 'reset-password' && 'Введите новый пароль'}
                 </p>
               </div>
             </div>
@@ -258,13 +241,13 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                   )}
                 </button>
 
-                <div className="text-center">
-                  <button
-                    onClick={() => setStep('reset-password-phone')}
-                    className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    Забыли пароль?
-                  </button>
+                <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 text-center">
+                    <strong>Тестовые данные:</strong><br />
+                    Админ: +996555123456<br />
+                    Пользователь: любой другой номер<br />
+                    SMS код: <strong>1234</strong>
+                  </p>
                 </div>
               </div>
             )}
@@ -285,7 +268,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                     maxLength={4}
                   />
                   <p className="text-xs text-gray-500 mt-2 text-center">
-                    Введите 4-значный код из SMS
+                    Введите код <strong>1234</strong> из SMS
                   </p>
                 </div>
 
@@ -380,62 +363,6 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                     </div>
                   ) : (
                     'Создать аккаунт'
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* Шаг 4: Сброс пароля */}
-            {step === 'reset-password' && (
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Новый пароль
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock size={20} className="text-gray-400" />
-                    </div>
-                    <input
-                      type="password"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Минимум 6 символов"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Подтвердите пароль
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock size={20} className="text-gray-400" />
-                    </div>
-                    <input
-                      type="password"
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Повторите пароль"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <button
-                  onClick={resetPassword}
-                  disabled={isLoading || newPassword.length < 6 || newPassword !== confirmPassword}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg py-3 font-semibold hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-                >
-                  {isLoading ? (
-                    <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                      Изменение пароля...
-                    </div>
-                  ) : (
-                    'Изменить пароль'
                   )}
                 </button>
               </div>

@@ -6,14 +6,15 @@ class StorageService {
     this.isNative = Capacitor.isNativePlatform();
   }
 
+  // Сохранить данные
   async setItem(key, value) {
     try {
-      const stringValue = JSON.stringify(value);
+      const jsonValue = JSON.stringify(value);
       
       if (this.isNative) {
-        await Preferences.set({ key, value: stringValue });
+        await Preferences.set({ key, value: jsonValue });
       } else {
-        localStorage.setItem(key, stringValue);
+        localStorage.setItem(key, jsonValue);
       }
     } catch (error) {
       console.error('Storage setItem error:', error);
@@ -21,24 +22,30 @@ class StorageService {
     }
   }
 
+  // Получить данные
   async getItem(key, defaultValue = null) {
     try {
-      let stringValue;
+      let value;
       
       if (this.isNative) {
         const result = await Preferences.get({ key });
-        stringValue = result.value;
+        value = result.value;
       } else {
-        stringValue = localStorage.getItem(key);
+        value = localStorage.getItem(key);
       }
-
-      return stringValue ? JSON.parse(stringValue) : defaultValue;
+      
+      if (value === null) {
+        return defaultValue;
+      }
+      
+      return JSON.parse(value);
     } catch (error) {
       console.error('Storage getItem error:', error);
       return defaultValue;
     }
   }
 
+  // Удалить данные
   async removeItem(key) {
     try {
       if (this.isNative) {
@@ -52,6 +59,7 @@ class StorageService {
     }
   }
 
+  // Очистить все данные
   async clear() {
     try {
       if (this.isNative) {
@@ -65,6 +73,7 @@ class StorageService {
     }
   }
 
+  // Получить все ключи
   async keys() {
     try {
       if (this.isNative) {
@@ -76,6 +85,45 @@ class StorageService {
     } catch (error) {
       console.error('Storage keys error:', error);
       return [];
+    }
+  }
+
+  // Проверить существование ключа
+  async hasItem(key) {
+    try {
+      const value = await this.getItem(key);
+      return value !== null;
+    } catch (error) {
+      console.error('Storage hasItem error:', error);
+      return false;
+    }
+  }
+
+  // Сохранить множественные данные
+  async setMultiple(items) {
+    try {
+      const promises = Object.entries(items).map(([key, value]) =>
+        this.setItem(key, value)
+      );
+      await Promise.all(promises);
+    } catch (error) {
+      console.error('Storage setMultiple error:', error);
+      throw error;
+    }
+  }
+
+  // Получить множественные данные
+  async getMultiple(keys) {
+    try {
+      const promises = keys.map(async (key) => {
+        const value = await this.getItem(key);
+        return [key, value];
+      });
+      const results = await Promise.all(promises);
+      return Object.fromEntries(results);
+    } catch (error) {
+      console.error('Storage getMultiple error:', error);
+      return {};
     }
   }
 }

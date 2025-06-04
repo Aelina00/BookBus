@@ -3,22 +3,33 @@ import { Capacitor } from '@capacitor/core';
 import { Network } from '@capacitor/network';
 
 export const useNetwork = () => {
-  const [isOnline, setIsOnline] = useState(true);
-  const [networkType, setNetworkType] = useState('unknown');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [connectionType, setConnectionType] = useState('unknown');
 
   useEffect(() => {
+    const handleStatusChange = (status) => {
+      setIsOnline(status.connected);
+      setConnectionType(status.connectionType);
+    };
+
     if (Capacitor.isNativePlatform()) {
-      initializeNetworkListeners();
-    } else {
-      // Web fallback
-      setIsOnline(navigator.onLine);
+      // Для нативных платформ используем Capacitor Network
+      Network.addListener('networkStatusChange', handleStatusChange);
       
+      // Получаем текущий статус
+      Network.getStatus().then(handleStatusChange);
+
+      return () => {
+        Network.removeAllListeners();
+      };
+    } else {
+      // Для веб используем стандартные события
       const handleOnline = () => setIsOnline(true);
       const handleOffline = () => setIsOnline(false);
-      
+
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
-      
+
       return () => {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
@@ -26,22 +37,5 @@ export const useNetwork = () => {
     }
   }, []);
 
-  const initializeNetworkListeners = async () => {
-    try {
-      // Получаем текущий статус сети
-      const status = await Network.getStatus();
-      setIsOnline(status.connected);
-      setNetworkType(status.connectionType);
-
-      // Слушаем изменения статуса сети
-      Network.addListener('networkStatusChange', (status) => {
-        setIsOnline(status.connected);
-        setNetworkType(status.connectionType);
-      });
-    } catch (error) {
-      console.error('Network status error:', error);
-    }
-  };
-
-  return { isOnline, networkType };
+  return { isOnline, connectionType };
 };

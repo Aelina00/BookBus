@@ -1,6 +1,6 @@
-import axios from 'axios';
-import config from '../config/api';
 import CryptoJS from 'crypto-js';
+import config from '../config/api';
+
 class FreedomPayService {
   constructor() {
     this.merchantId = config.freedomPayMerchantId;
@@ -12,13 +12,9 @@ class FreedomPayService {
   createSignature(data) {
     const sortedKeys = Object.keys(data).sort();
     const signString = sortedKeys.map(key => `${key}=${data[key]}`).join('&');
-    return this.hashHmacSha256(signString, this.secretKey);
+    return CryptoJS.HmacSHA256(signString, this.secretKey).toString();
   }
 
-  // HMAC SHA256 хеширование
-  hashHmacSha256(data, key) {
-    return CryptoJS.HmacSHA256(data, key).toString();
-  }
   // Создание платежа
   async createPayment(orderData) {
     const paymentData = {
@@ -38,8 +34,22 @@ class FreedomPayService {
     paymentData.signature = this.createSignature(paymentData);
 
     try {
-      const response = await axios.post(`${this.baseURL}/payment/create`, paymentData);
-      return response.data;
+      // В продакшене здесь будет реальный запрос к FreedomPay API
+      // const response = await axios.post(`${this.baseURL}/payment/create`, paymentData);
+      // return response.data;
+
+      // Заглушка для разработки
+      console.log('FreedomPay payment creation:', paymentData);
+      
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            payment_url: `https://pay.freedompay.kg/test?order=${orderData.orderId}`,
+            transaction_id: 'test_' + Date.now()
+          });
+        }, 1000);
+      });
     } catch (error) {
       console.error('FreedomPay payment creation error:', error);
       throw new Error('Ошибка создания платежа');
@@ -57,8 +67,20 @@ class FreedomPayService {
     data.signature = this.createSignature(data);
 
     try {
-      const response = await axios.post(`${this.baseURL}/payment/status`, data);
-      return response.data;
+      // В продакшене здесь будет реальный запрос к FreedomPay API
+      // const response = await axios.post(`${this.baseURL}/payment/status`, data);
+      // return response.data;
+
+      // Заглушка для разработки
+      console.log('Checking payment status:', transactionId);
+      
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            status: 'SUCCESS' // SUCCESS, FAILED, PENDING
+          });
+        }, 2000);
+      });
     } catch (error) {
       console.error('FreedomPay status check error:', error);
       throw new Error('Ошибка проверки статуса платежа');
@@ -77,8 +99,21 @@ class FreedomPayService {
     data.signature = this.createSignature(data);
 
     try {
-      const response = await axios.post(`${this.baseURL}/payment/refund`, data);
-      return response.data;
+      // В продакшене здесь будет реальный запрос к FreedomPay API
+      // const response = await axios.post(`${this.baseURL}/payment/refund`, data);
+      // return response.data;
+
+      // Заглушка для разработки
+      console.log('Refunding payment:', transactionId, amount);
+      
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            success: true,
+            refund_id: 'refund_' + Date.now()
+          });
+        }, 1000);
+      });
     } catch (error) {
       console.error('FreedomPay refund error:', error);
       throw new Error('Ошибка возврата платежа');

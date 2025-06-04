@@ -1,125 +1,139 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { PushNotifications } from '@capacitor/push-notifications';
 
-export const useNotifications = (bookings = []) => {
+export const useNotifications = (bookingHistory = []) => {
+  const [permissionStatus, setPermissionStatus] = useState('prompt');
+
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
-      initializePushNotifications();
-      scheduleLocalNotifications(bookings);
+      initializeNotifications();
     }
-  }, [bookings]);
+  }, []);
 
-  const initializePushNotifications = async () => {
+  const initializeNotifications = async () => {
     try {
-      // Запрос разрешений
-      const permission = await PushNotifications.requestPermissions();
+      // Запрос разрешений для локальных уведомлений
+      const localPermission = await LocalNotifications.requestPermissions();
       
-      if (permission.receive === 'granted') {
-        await PushNotifications.register();
+      // Запрос разрешений для push уведомлений
+      const pushPermission = await PushNotifications.requestPermissions();
+      
+      setPermissionStatus(localPermission.display);
+
+      // Регистрация для push уведомлений
+      if (pushPermission.receive === 'granted') {
+        PushNotifications.register();
       }
 
       // Обработчики событий
       PushNotifications.addListener('registration', (token) => {
         console.log('Push registration success, token: ' + token.value);
-        // Отправить токен на сервер
-        sendTokenToServer(token.value);
       });
 
-      PushNotifications.addListener('registrationError', (err) => {
-        console.error('Registration error: ', err.error);
+      PushNotifications.addListener('registrationError', (error) => {
+        console.error('Push registration error: ', error);
       });
 
       PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        console.log('Push notification received: ', notification);
+        console.log('Push received: ', notification);
       });
 
       PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
-        console.log('Push notification action performed', notification.actionId, notification.inputValue);
+        console.log('Push action performed: ', notification);
       });
 
     } catch (error) {
-      console.error('Push notification setup error:', error);
+      console.error('Notification initialization error:', error);
     }
   };
 
-  const scheduleLocalNotifications = async (bookings) => {
+  // Показать локальное уведомление
+  const showLocalNotification = async (title, body, data = {}) => {
     try {
-      // Запрос разрешений для локальных уведомлений
-      const permission = await LocalNotifications.requestPermissions();
-      
-      if (permission.display === 'granted') {
-        // Отменяем все предыдущие уведомления
-        await LocalNotifications.cancel({ notifications: [] });
-
-        // Планируем уведомления для предстоящих поездок
-        const notifications = [];
-        
-        bookings.forEach((booking, index) => {
-          if (booking.status === 'upcoming') {
-            const tripDateTime = new Date(`${booking.date.split('-').reverse().join('-')} ${booking.departureTime}`);
-            const reminderTime = new Date(tripDateTime.getTime() - 24 * 60 * 60 * 1000); // За 24 часа
-            
-            if (reminderTime > new Date()) {
-              notifications.push({
-                id: index + 1,
-                title: 'Напоминание о поездке',
-                body: `Завтра в ${booking.departureTime} отправление ${booking.from} → ${booking.to}`,
-                schedule: { at: reminderTime },
-                sound: 'beep.wav',
-                attachments: null,
-                actionTypeId: '',
-                extra: {
-                  bookingId: booking.id
-                }
-              });
+      if (Capacitor.isNativePlatform()) {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title,
+              body,
+              id: Date.now(),
+              schedule: { at: new Date(Date.now() + 1000) },
+              sound: 'beep.wav',
+              attachments: [],
+              actionTypeId: '',
+              extra: data
             }
-          }
+          ]
         });
-
-        if (notifications.length > 0) {
-          await LocalNotifications.schedule({ notifications });
+      } else {
+        // Для веб используем стандартные уведомления
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/logo192.png' });
         }
       }
     } catch (error) {
-      console.error('Local notification setup error:', error);
+      console.error('Local notification error:', error);
     }
   };
 
-  const sendTokenToServer = async (token) => {
+  // Запланировать уведомление о поездке
+  const scheduleBookingReminder = async (booking) => {
     try {
-      // Отправляем токен на сервер для push-уведомлений
-      await fetch('/api/notifications/register-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`
-        },
-        body: JSON.stringify({ token })
-      });
+      if (!Capacitor.isNativePlatform()) return;
+
+      const [day, month, year] = booking.date.split('-');
+      const [hours, minutes] = booking.departureTime.split(':');
+      
+      const tripDate = new Date(year, month - 1, day, hours, minutes);
+      const reminderDate = new Date(tripDate.getTime() - 2 * 60 * 60 * 1000); // За 2 часа
+
+      if (reminderDate > new Date()) {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              title: 'Напоминание о поездке',
+              body: `Ваша поездка ${booking.from} → ${booking.to} отправляется через 2 часа`,
+              id: parseInt(`${booking.id}1`),
+              schedule: { at: reminderDate },
+              extra: { bookingId: booking.id, type: 'reminder' }
+            },
+            {
+              title: 'Время отправления!',
+              body: `Ваша поездка ${booking.from} → ${booking.to} отправляется сейчас`,
+              id: parseInt(`${booking.id}2`),
+              schedule: { at: tripDate },
+              extra: { bookingId: booking.id, type: 'departure' }
+            }
+          ]
+        });
+      }
     } catch (error) {
-      console.error('Error sending token to server:', error);
+      console.error('Booking reminder error:', error);
     }
   };
 
-  const showLocalNotification = async (title, body) => {
+  // Отменить уведомления о поездке
+  const cancelBookingReminders = async (bookingId) => {
     try {
-      await LocalNotifications.schedule({
-        notifications: [{
-          id: Date.now(),
-          title,
-          body,
-          schedule: { at: new Date(Date.now() + 1000) }, // Через 1 секунду
-          sound: 'beep.wav'
-        }]
-      });
+      if (Capacitor.isNativePlatform()) {
+        await LocalNotifications.cancel({
+          notifications: [
+            { id: parseInt(`${bookingId}1`) },
+            { id: parseInt(`${bookingId}2`) }
+          ]
+        });
+      }
     } catch (error) {
-      console.error('Error showing notification:', error);
+      console.error('Cancel booking reminders error:', error);
     }
   };
 
   return {
-    showLocalNotification
+    permissionStatus,
+    showLocalNotification,
+    scheduleBookingReminder,
+    cancelBookingReminders
   };
 };

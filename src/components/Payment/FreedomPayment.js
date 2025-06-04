@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, Shield, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react';
+import { CreditCard, Shield, AlertCircle, CheckCircle, ArrowLeft, Wifi, WifiOff } from 'lucide-react';
 import freedomPayService from '../../services/freedomPay';
-import { paymentAPI } from '../../services/api';
 
 const FreedomPayment = ({ 
   bookingData, 
@@ -16,9 +15,29 @@ const FreedomPayment = ({
   const [error, setError] = useState('');
   const [paymentUrl, setPaymentUrl] = useState('');
   const [transactionId, setTransactionId] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Проверка сетевого подключения
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Создание платежа
   const createPayment = async () => {
+    if (!isOnline) {
+      setError('Для оплаты необходимо подключение к интернету');
+      return;
+    }
+
     setIsProcessing(true);
     setError('');
     setPaymentStatus('processing');
@@ -46,11 +65,15 @@ const FreedomPayment = ({
         setPaymentUrl(paymentResponse.payment_url);
         setTransactionId(paymentResponse.transaction_id);
         
-        // Открываем страницу оплаты
-        window.open(paymentResponse.payment_url, '_blank');
+        // Открываем страницу оплаты в новом окне
+        const paymentWindow = window.open(
+          paymentResponse.payment_url, 
+          'freedompay_payment',
+          'width=800,height=600,scrollbars=yes,resizable=yes'
+        );
         
         // Начинаем проверку статуса платежа
-        startPaymentStatusCheck(paymentResponse.transaction_id);
+        startPaymentStatusCheck(paymentResponse.transaction_id, paymentWindow);
       } else {
         throw new Error(paymentResponse.message || 'Ошибка создания платежа');
       }
@@ -64,13 +87,27 @@ const FreedomPayment = ({
   };
 
   // Проверка статуса платежа
-  const startPaymentStatusCheck = (txId) => {
+  const startPaymentStatusCheck = (txId, paymentWindow) => {
+    let checkCount = 0;
+    const maxChecks = 60; // 5 минут максимум
+
     const checkStatus = async () => {
       try {
+        checkCount++;
+        
+        // Проверяем, закрыто ли окно оплаты
+        if (paymentWindow && paymentWindow.closed) {
+          console.log('Payment window closed by user');
+          setPaymentStatus('error');
+          setError('Оплата отменена пользователем');
+          return;
+        }
+
         const statusResponse = await freedomPayService.checkPaymentStatus(txId);
         
         switch (statusResponse.status) {
           case 'SUCCESS':
+            if (paymentWindow) paymentWindow.close();
             setPaymentStatus('success');
             onPaymentSuccess({
               transactionId: txId,
@@ -79,24 +116,44 @@ const FreedomPayment = ({
             });
             break;
           case 'FAILED':
+            if (paymentWindow) paymentWindow.close();
             setPaymentStatus('error');
-            setError('Платеж отклонен');
+            setError('Платеж отклонен банком');
+            onPaymentError('Payment failed');
             break;
           case 'PENDING':
-            // Продолжаем проверку
-            setTimeout(() => checkStatus(), 3000);
+            // Продолжаем проверку, если не превышен лимит
+            if (checkCount < maxChecks) {
+              setTimeout(() => checkStatus(), 5000);
+            } else {
+              if (paymentWindow) paymentWindow.close();
+              setPaymentStatus('error');
+              setError('Время ожидания истекло');
+            }
             break;
           default:
-            setTimeout(() => checkStatus(), 3000);
+            if (checkCount < maxChecks) {
+              setTimeout(() => checkStatus(), 5000);
+            } else {
+              if (paymentWindow) paymentWindow.close();
+              setPaymentStatus('error');
+              setError('Не удалось получить статус платежа');
+            }
         }
       } catch (error) {
         console.error('Status check error:', error);
-        setTimeout(() => checkStatus(), 5000);
+        if (checkCount < maxChecks) {
+          setTimeout(() => checkStatus(), 10000); // Увеличиваем интервал при ошибке
+        } else {
+          if (paymentWindow) paymentWindow.close();
+          setPaymentStatus('error');
+          setError('Ошибка проверки статуса платежа');
+        }
       }
     };
 
-    // Начинаем проверку через 5 секунд
-    setTimeout(() => checkStatus(), 5000);
+    // Начинаем проверку через 3 секунды
+    setTimeout(() => checkStatus(), 3000);
   };
 
   // Повторная попытка платежа
@@ -117,14 +174,24 @@ const FreedomPayment = ({
           >
             <ArrowLeft size={20} className="text-gray-600" />
           </button>
-          <h1 className="text-xl font-semibold text-gray-800">Оплата</h1>
+          <h1 className="text-xl font-semibold text-gray-800">Оплата через FreedomPay</h1>
+          <div className="ml-auto flex items-center">
+            {isOnline ? (
+              <Wifi size={20} className="text-green-600" />
+            ) : (
+              <WifiOff size={20} className="text-red-600" />
+            )}
+          </div>
         </div>
       </header>
 
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Информация о платеже */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-semibold mb-4 text-gray-800">Детали платежа</h2>
+          <h2 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
+            <CreditCard size={20} className="mr-2 text-blue-600" />
+            Детали платежа
+          </h2>
           
           <div className="space-y-3">
             <div className="flex justify-between items-center py-2 border-b border-gray-100">
@@ -154,26 +221,63 @@ const FreedomPayment = ({
           </div>
         </div>
 
-        {/* Статус платежа */}
+        {/* Статус оплаты */}
+        {!isOnline && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <WifiOff size={20} className="text-red-600 mr-3" />
+              <div>
+                <h3 className="font-semibold text-red-800">Нет подключения к интернету</h3>
+                <p className="text-red-600 text-sm">Для оплаты необходимо подключение к интернету</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {paymentStatus === 'idle' && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
             <div className="text-center">
               <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CreditCard size={32} className="text-blue-600" />
+                <img 
+                  src="/freedompay-logo.png" 
+                  alt="FreedomPay" 
+                  className="w-12 h-12"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextElementSibling.style.display = 'flex';
+                  }}
+                />
+                <CreditCard size={32} className="text-blue-600" style={{display: 'none'}} />
               </div>
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Оплата через FreedomPay</h3>
               <p className="text-gray-600 mb-6">
-                Безопасная оплата банковской картой через систему FreedomPay
+                Безопасная оплата банковской картой через систему FreedomPay Кыргызстан
               </p>
               
-              <div className="flex items-center justify-center space-x-2 mb-6 text-sm text-gray-500">
-                <Shield size={16} />
-                <span>Защищенное соединение SSL</span>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <Shield size={16} />
+                  <span>SSL защита</span>
+                </div>
+                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+                  <CheckCircle size={16} />
+                  <span>PCI DSS</span>
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <h4 className="font-semibold text-blue-800 mb-2">Поддерживаемые карты:</h4>
+                <div className="flex justify-center space-x-4">
+                  <img src="/visa-logo.png" alt="Visa" className="h-8" onError={(e) => e.target.style.display = 'none'} />
+                  <img src="/mastercard-logo.png" alt="MasterCard" className="h-8" onError={(e) => e.target.style.display = 'none'} />
+                  <img src="/elcard-logo.png" alt="Elcard" className="h-8" onError={(e) => e.target.style.display = 'none'} />
+                </div>
+                <p className="text-blue-600 text-sm mt-2">Visa, MasterCard, Элкарт и другие</p>
               </div>
 
               <button
                 onClick={createPayment}
-                disabled={isProcessing}
+                disabled={isProcessing || !isOnline}
                 className="w-full bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg py-4 font-semibold hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 {isProcessing ? (
@@ -201,26 +305,29 @@ const FreedomPayment = ({
               </p>
               
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <p className="text-blue-800 text-sm">
-                  💡 Не закрывайте это окно до завершения оплаты
+                <p className="text-blue-800 text-sm flex items-center justify-center">
+                  <Shield size={16} className="mr-2" />
+                  Не закрывайте это окно до завершения оплаты
                 </p>
               </div>
 
-              {paymentUrl && (
+              <div className="space-y-3">
+                {paymentUrl && (
+                  <button
+                    onClick={() => window.open(paymentUrl, 'freedompay_payment', 'width=800,height=600,scrollbars=yes,resizable=yes')}
+                    className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 transition-colors"
+                  >
+                    Открыть страницу оплаты заново
+                  </button>
+                )}
+                
                 <button
-                  onClick={() => window.open(paymentUrl, '_blank')}
-                  className="w-full bg-blue-600 text-white rounded-lg py-3 font-medium hover:bg-blue-700 transition-colors mb-3"
+                  onClick={retryPayment}
+                  className="w-full bg-gray-300 text-gray-700 rounded-lg py-3 font-medium hover:bg-gray-400 transition-colors"
                 >
-                  Открыть страницу оплаты заново
+                  Отменить платеж
                 </button>
-              )}
-              
-              <button
-                onClick={retryPayment}
-                className="w-full bg-gray-300 text-gray-700 rounded-lg py-3 font-medium hover:bg-gray-400 transition-colors"
-              >
-                Отменить платеж
-              </button>
+              </div>
             </div>
           </div>
         )}
@@ -238,8 +345,12 @@ const FreedomPayment = ({
               
               <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                 <p className="text-green-800 text-sm">
-                  ID транзакции: {transactionId}
+                  <strong>ID транзакции:</strong> {transactionId}
                 </p>
+              </div>
+
+              <div className="text-xs text-gray-500 mb-4">
+                Чек об оплате будет отправлен на номер {bookingData.phone}
               </div>
             </div>
           </div>
@@ -253,6 +364,12 @@ const FreedomPayment = ({
               </div>
               <h3 className="text-lg font-semibold text-gray-800 mb-2">Ошибка оплаты</h3>
               <p className="text-gray-600 mb-4">{error}</p>
+              
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-red-700 text-sm">
+                  Если деньги были списаны с карты, они будут возвращены в течение 3-5 рабочих дней
+                </p>
+              </div>
               
               <div className="flex space-x-3">
                 <button
