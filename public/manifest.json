@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Karakol Bus",
+  "name": "Karakol Bus - Бронирование билетов",
   "icons": [
     {
       "src": "favicon.ico",
@@ -20,6 +20,18 @@
   ],
   "start_url": ".",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#2563eb",
+  "background_color": "#f3f4f6",
+  "orientation": "portrait",
+  "scope": "/",
+  "lang": "ru",
+  "description": "Бронирование билетов на автобус Бишкек - Каракол",
+  "categories": ["travel", "transportation"],
+  "screenshots": [
+    {
+      "src": "screenshot1.png",
+      "type": "image/png",
+      "sizes": "390x844"
+    }
+  ]
 }
