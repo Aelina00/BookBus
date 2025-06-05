@@ -1,29 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Lock, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
+import storageService from '../../services/storage';
 
-const PhoneAuth = ({ onAuthSuccess, onBack }) => {
-  const [step, setStep] = useState('phone'); // 'phone', 'otp', 'create-password'
+const PhoneAuth = ({ onAuthSuccess }) => {
+  const [step, setStep] = useState('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOTP] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [timer, setTimer] = useState(0);
-  const [canResendOTP, setCanResendOTP] = useState(false);
+  const [registeredUsers, setRegisteredUsers] = useState([]);
 
-  // Таймер для повторной отправки OTP
+  // Загружаем зарегистрированных пользователей при запуске
   useEffect(() => {
-    let interval;
-    if (timer > 0) {
-      interval = setInterval(() => {
-        setTimer(timer - 1);
-      }, 1000);
-    } else {
-      setCanResendOTP(true);
+    loadRegisteredUsers();
+  }, []);
+
+  const loadRegisteredUsers = async () => {
+    try {
+      const users = await storageService.getItem('registeredUsers', []);
+      setRegisteredUsers(users);
+      console.log('📱 Loaded registered users:', users.length);
+    } catch (error) {
+      console.error('Error loading users:', error);
     }
-    return () => clearInterval(interval);
-  }, [timer]);
+  };
 
   // Форматирование номера телефона
   const formatPhoneNumber = (value) => {
@@ -46,7 +48,12 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     return phoneRegex.test(phone);
   };
 
-  // Отправка OTP (заглушка для разработки)
+  // Проверка, зарегистрирован ли пользователь
+  const isUserRegistered = (phone) => {
+    return registeredUsers.some(user => user.phone === phone);
+  };
+
+  // Отправка OTP
   const sendOTP = async () => {
     if (!isValidPhone(phone)) {
       setError('Введите корректный номер телефона');
@@ -57,31 +64,15 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      // Заглушка для разработки - показываем код в консоли
-      console.log(`SMS код для ${phone}: 1234`);
+      console.log(`📨 Sending OTP to ${phone}`);
       
       setTimeout(() => {
         setStep('otp');
-        setTimer(60);
-        setCanResendOTP(false);
         setIsLoading(false);
+        console.log(`✅ OTP sent to ${phone}. Test code: 1234`);
       }, 1000);
     } catch (error) {
       setError('Ошибка отправки SMS');
-      setIsLoading(false);
-    }
-  };
-
-  // Повторная отправка OTP
-  const resendOTP = async () => {
-    if (!canResendOTP) return;
-    
-    setIsLoading(true);
-    try {
-      await sendOTP();
-    } catch (error) {
-      setError('Ошибка повторной отправки SMS');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -97,23 +88,38 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      // Заглушка для разработки
-      setTimeout(() => {
+      setTimeout(async () => {
         if (otp === '1234') {
-          // Проверяем, админ ли это
-          if (phone === '+996555123456') {
-            // Админ - сразу входим
-            const user = {
-              id: 1,
-              phone: phone,
-              firstName: 'Админ',
-              lastName: 'Системы',
-              role: 'admin'
-            };
-            onAuthSuccess(user);
+          // Проверяем, зарегистрирован ли пользователь
+          const existingUser = registeredUsers.find(user => user.phone === phone);
+          
+          if (existingUser) {
+            console.log('✅ Existing user found:', existingUser);
+            // Пользователь уже зарегистрирован - входим
+            await onAuthSuccess(existingUser);
           } else {
-            // Новый пользователь - создаем аккаунт
-            setStep('create-password');
+            console.log('🆕 New user, creating account');
+            // Новый пользователь - переходим к созданию пароля
+            if (phone === '+996555123456') {
+              // Админ - сразу входим
+              const adminUser = {
+                id: 1,
+                phone: phone,
+                firstName: 'Админ',
+                lastName: 'Системы',
+                role: 'admin',
+                createdAt: new Date().toISOString()
+              };
+              
+              // Сохраняем админа в зарегистрированных пользователях
+              const updatedUsers = [...registeredUsers, adminUser];
+              await storageService.setItem('registeredUsers', updatedUsers);
+              
+              await onAuthSuccess(adminUser);
+            } else {
+              // Обычный пользователь - создаем пароль
+              setStep('create-password');
+            }
           }
         } else {
           setError('Неверный код');
@@ -126,7 +132,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     }
   };
 
-  // Создание пароля для нового пользователя
+  // Создание нового пользователя
   const createPassword = async () => {
     if (newPassword.length < 6) {
       setError('Пароль должен содержать минимум 6 символов');
@@ -142,15 +148,26 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
     setError('');
 
     try {
-      setTimeout(() => {
-        const user = {
+      setTimeout(async () => {
+        const newUser = {
           id: Date.now(),
           phone: phone,
           firstName: 'Пользователь',
           lastName: '',
-          role: 'user'
+          role: 'user',
+          password: newPassword, // В реальном приложении нужно хешировать
+          createdAt: new Date().toISOString()
         };
-        onAuthSuccess(user);
+
+        console.log('👤 Creating new user:', newUser);
+
+        // Добавляем пользователя в список зарегистрированных
+        const updatedUsers = [...registeredUsers, newUser];
+        await storageService.setItem('registeredUsers', updatedUsers);
+        
+        console.log('💾 User saved to registered users');
+
+        await onAuthSuccess(newUser);
         setIsLoading(false);
       }, 1000);
     } catch (error) {
@@ -171,6 +188,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                   onClick={() => {
                     if (step === 'otp') setStep('phone');
                     else if (step === 'create-password') setStep('otp');
+                    setError('');
                   }}
                   className="mr-4 p-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition-colors"
                 >
@@ -222,7 +240,10 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                     />
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    На этот номер будет отправлен код подтверждения
+                    {isUserRegistered(phone) 
+                      ? '✅ Этот номер уже зарегистрирован' 
+                      : 'На этот номер будет отправлен код подтверждения'
+                    }
                   </p>
                 </div>
 
@@ -237,7 +258,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                       Отправка SMS...
                     </div>
                   ) : (
-                    'Получить код'
+                    isUserRegistered(phone) ? 'Войти' : 'Получить код'
                   )}
                 </button>
 
@@ -245,8 +266,8 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                   <p className="text-sm text-gray-600 text-center">
                     <strong>Тестовые данные:</strong><br />
                     Админ: +996555123456<br />
-                    Пользователь: любой другой номер<br />
-                    SMS код: <strong>1234</strong>
+                    SMS код: <strong>1234</strong><br />
+                    Зарегистрированных пользователей: {registeredUsers.length}
                   </p>
                 </div>
               </div>
@@ -266,6 +287,7 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                     value={otp}
                     onChange={(e) => setOTP(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     maxLength={4}
+                    autoFocus
                   />
                   <p className="text-xs text-gray-500 mt-2 text-center">
                     Введите код <strong>1234</strong> из SMS
@@ -286,27 +308,10 @@ const PhoneAuth = ({ onAuthSuccess, onBack }) => {
                     'Подтвердить'
                   )}
                 </button>
-
-                {/* Повторная отправка */}
-                <div className="text-center">
-                  {timer > 0 ? (
-                    <p className="text-sm text-gray-500">
-                      Повторная отправка через {timer} сек
-                    </p>
-                  ) : (
-                    <button
-                      onClick={resendOTP}
-                      disabled={isLoading}
-                      className="text-sm text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      Отправить код повторно
-                    </button>
-                  )}
-                </div>
               </div>
             )}
 
-            {/* Шаг 3: Создание пароля для нового пользователя */}
+            {/* Шаг 3: Создание пароля */}
             {step === 'create-password' && (
               <div className="space-y-5">
                 <div className="text-center mb-4">

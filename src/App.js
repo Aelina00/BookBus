@@ -15,6 +15,11 @@ import { useNetwork } from './hooks/useNetwork';
 import { useNotifications } from './hooks/useNotifications';
 import { authAPI, routesAPI, busesAPI, bookingsAPI } from './services/api';
 import storageService from './services/storage';
+import syncService from './services/sync';
+import { useTranslation } from './hooks/useTranslation';
+import { formatPhoneNumber, isValidPhone } from './utils/phoneUtils';
+
+
 
 // Утилиты для работы с датами
 const getCurrentDate = () => {
@@ -270,12 +275,12 @@ const PersonalInfo = ({ initialInfo, t, onInfoChange, onSubmit }) => {
 // Главный компонент приложения
 const App = () => {
   const [step, setStep] = useState(0);
-  const [language, setLanguage] = useState('ru');
+  const { language, changeLanguage, t } = useTranslation();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-
+  
   const [tripType, setTripType] = useState('one-way');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -298,6 +303,11 @@ const App = () => {
   const [bookingHistory, setBookingHistory] = useState([]);
   const [reviews, setReviews] = useState([]);
 
+  const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
+  const [newPhoneNumber, setNewPhoneNumber] = useState('');
+  const [phoneOTP, setPhoneOTP] = useState('');
+  const [phoneChangeStep, setPhoneChangeStep] = useState('phone');
+  
   const [personalInfo, setPersonalInfo] = useState({
     firstName: '',
     lastName: '',
@@ -353,71 +363,286 @@ const App = () => {
   const { isOnline } = useNetwork();
   const { showLocalNotification } = useNotifications(bookingHistory);
 
-  const t = translations[language] || translations['ru'];
+  const [registeredUsers, setRegisteredUsers] = useState([]);
 
-  // Инициализация приложения
+  // В useEffect для загрузки данных:
   useEffect(() => {
-    initializeApp();
+    loadRegisteredUsers();
   }, []);
+  
+  const loadRegisteredUsers = async () => {
+    try {
+      const users = await storageService.getItem('registeredUsers', []);
+      setRegisteredUsers(users);
+    } catch (error) {
+      console.error('Error loading users:', error);
+    }
+  };
+  // Инициализация приложения
+  // useEffect(() => {
+  //   // Запускаем автоматическую синхронизацию
+  //   syncService.startAutoSync();
+    
+  //   return () => {
+  //     // Останавливаем при размонтировании
+  //     syncService.stopAutoSync();
+  //   };
+  // }, []);
+  
+  useEffect(() => {
+    // Принудительно убираем загрузку через 3 секунды
+    const timer = setTimeout(() => {
+      if (isLoading) {
+        console.log('🚨 Force stopping loading screen');
+        setIsLoading(false);
+        if (!isLoggedIn) {
+          setStep(0); // Показываем экран входа
+        }
+      }
+    }, 3000);
+  
+    return () => clearTimeout(timer);
+  }, [isLoading, isLoggedIn]);
 
   const initializeApp = async () => {
     try {
       setIsLoading(true);
+      const loadingTimeout = setTimeout(() => {
+        console.log('⏰ Loading timeout - forcing app start');
+        setIsLoading(false);
+        setStep(0);
+      }, 10000);
       
-      // Проверяем токен аутентификации
+      console.log('🚀 Initializing app...');
+      
+      // Простая проверка аутентификации
       const token = await storageService.getItem('authToken');
       const savedUser = await storageService.getItem('currentUser');
       
       if (token && savedUser) {
+        console.log('✅ User found:', savedUser.firstName);
         setCurrentUser(savedUser);
         setIsLoggedIn(true);
         setIsAdmin(savedUser.role === 'admin');
         
-        // Загружаем данные
-        await loadAppData();
+        // Простая загрузка данных без синхронизации
+        await loadAppDataSimple();
+        setStep(1);
+      } else {
+        console.log('❌ No user found, showing auth');
+        setStep(0);
       }
-      
-      setStep(1); // Главный экран
+      clearTimeout(loadingTimeout);
+    
     } catch (error) {
-      console.error('App initialization error:', error);
+      console.error('❌ App initialization error:', error);
+      setStep(0);
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Загрузка данных приложения
-  const loadAppData = async () => {
+  
+  // Обновите функцию loadAppData:
+  const loadAppDataSimple = async () => {
     try {
-      if (isOnline) {
-        // Загружаем с сервера
-        const [routesResponse, bookingsResponse] = await Promise.all([
-          routesAPI.getAll(),
-          currentUser ? bookingsAPI.getUserBookings(currentUser.id) : Promise.resolve({ data: [] })
-        ]);
+      console.log('📦 Loading simple data...');
+      
+      // Получаем данные из хранилища или используем начальные
+      const savedRoutes = await storageService.getItem('routes', []);
+      const savedBookings = await storageService.getItem('bookingHistory', []);
+      const savedBuses = await storageService.getItem('buses', {});
+      const savedBookedSeats = await storageService.getItem('bookedSeats', {});
+      const savedReviews = await storageService.getItem('reviews', []);
+      
+      // Если данных нет, устанавливаем начальные
+      if (savedRoutes.length === 0) {
+        console.log('🔧 Setting initial routes...');
+        const initialRoutes = [
+          {
+            id: 1,
+            from: "Бишкек",
+            to: "Каракол",
+            departureAddress: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)",
+            arrivalAddress: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)",
+            price: 600,
+            currency: "сом",
+            duration: 430,
+            vehicleType: "автобус",
+            stops: [
+              { name: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)", time: "23:00" },
+              { name: "Г. Токмок", time: "00:45" },
+              { name: "Г. Балыкчы (старые бензо колонки)", time: "02:30" },
+              { name: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)", time: "06:10" }
+            ]
+          },
+          {
+            id: 2,
+            from: "Каракол",
+            to: "Бишкек",
+            departureAddress: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)",
+            arrivalAddress: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)",
+            price: 600,
+            currency: "сом",
+            duration: 430,
+            vehicleType: "автобус",
+            stops: [
+              { name: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)", time: "21:00" },
+              { name: "Г. Балыкчы", time: "00:45" },
+              { name: "Г. Токмок", time: "02:30" },
+              { name: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)", time: "04:10" }
+            ]
+          }
+        ];
         
-        setRoutes(routesResponse.data);
-        setBookingHistory(bookingsResponse.data);
-        
-        // Сохраняем в локальное хранилище
-        await storageService.setItem('routes', routesResponse.data);
-        await storageService.setItem('bookingHistory', bookingsResponse.data);
+        setRoutes(initialRoutes);
+        await storageService.setItem('routes', initialRoutes);
       } else {
-        // Загружаем из локального хранилища
-        const savedRoutes = await storageService.getItem('routes', []);
-        const savedBookings = await storageService.getItem('bookingHistory', []);
-        const savedBuses = await storageService.getItem('buses', {});
-        const savedBookedSeats = await storageService.getItem('bookedSeats', {});
-        const savedReviews = await storageService.getItem('reviews', []);
-        
         setRoutes(savedRoutes);
-        setBookingHistory(savedBookings);
-        setBuses(savedBuses);
-        setBookedSeats(savedBookedSeats);
-        setReviews(savedReviews);
       }
+  
+      if (Object.keys(savedBuses).length === 0) {
+        console.log('🔧 Setting initial buses...');
+        const today = getCurrentDate();
+        const tomorrow = (() => {
+          const date = new Date();
+          date.setDate(date.getDate() + 1);
+          return `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`;
+        })();
+  
+        const initialBuses = {
+          [today]: [
+            {
+              id: 1,
+              routeId: 1,
+              departureTime: "23:00",
+              arrivalTime: "06:10",
+              busNumber: "01KG123ADF",
+              carrier: "ОсОО \"Karakol Bus\"",
+              totalSeats: 51,
+              availableSeats: 51,
+              vehicleType: "автобус"
+            }
+          ],
+          [tomorrow]: [
+            {
+              id: 2,
+              routeId: 2,
+              departureTime: "21:00",
+              arrivalTime: "04:10",
+              busNumber: "01KG456GHI",
+              carrier: "ОсОО \"Karakol Bus\"",
+              totalSeats: 51,
+              availableSeats: 51,
+              vehicleType: "автобус"
+            }
+          ]
+        };
+        
+        setBuses(initialBuses);
+        await storageService.setItem('buses', initialBuses);
+      } else {
+        setBuses(savedBuses);
+      }
+  
+      setBookingHistory(savedBookings);
+      setBookedSeats(savedBookedSeats);
+      setReviews(savedReviews);
+      
+      console.log('✅ Data loaded successfully');
+      
     } catch (error) {
-      console.error('Data loading error:', error);
+      console.error('❌ Data loading error:', error);
+      // При ошибке устанавливаем пустые массивы
+      setRoutes([]);
+      setBuses({});
+      setBookingHistory([]);
+      setBookedSeats({});
+      setReviews([]);
     }
+  };
+  // Добавьте функцию для установки начальных данных:
+  const setInitialData = async () => {
+    console.log('🔧 Setting up initial data...');
+    
+    const initialRoutes = [
+      {
+        id: 1,
+        from: "Бишкек",
+        to: "Каракол",
+        departureAddress: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)",
+        arrivalAddress: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)",
+        price: 600,
+        currency: "сом",
+        duration: 430,
+        vehicleType: "автобус",
+        stops: [
+          { name: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)", time: "23:00" },
+          { name: "Г. Токмок", time: "00:45" },
+          { name: "Г. Балыкчы (старые бензо колонки)", time: "02:30" },
+          { name: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)", time: "06:10" }
+        ]
+      },
+      {
+        id: 2,
+        from: "Каракол",
+        to: "Бишкек",
+        departureAddress: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)",
+        arrivalAddress: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)",
+        price: 600,
+        currency: "сом",
+        duration: 430,
+        vehicleType: "автобус",
+        stops: [
+          { name: "Г. Каракол, ул.Гебзе/Пржевальск (Ак Керем мечит)", time: "21:00" },
+          { name: "Г. Балыкчы", time: "00:45" },
+          { name: "Г. Токмок", time: "02:30" },
+          { name: "Г. Бишкек, ул.Ибраимова/Фрунзе (Тойчубек кафе)", time: "04:10" }
+        ]
+      }
+    ];
+  
+    const initialBuses = {
+      [getCurrentDate()]: [
+        {
+          id: 1,
+          routeId: 1,
+          departureTime: "23:00",
+          arrivalTime: "06:10",
+          busNumber: "01KG123ADF",
+          carrier: "ОсОО \"Karakol Bus\"",
+          totalSeats: 51,
+          availableSeats: 51,
+          vehicleType: "автобус"
+        }
+      ],
+      [(() => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        return `${String(tomorrow.getDate()).padStart(2, '0')}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${tomorrow.getFullYear()}`;
+      })()] : [
+        {
+          id: 2,
+          routeId: 2,
+          departureTime: "21:00",
+          arrivalTime: "04:10",
+          busNumber: "01KG456GHI",
+          carrier: "ОсОО \"Karakol Bus\"",
+          totalSeats: 51,
+          availableSeats: 51,
+          vehicleType: "автобус"
+        }
+      ]
+    };
+  
+    setRoutes(initialRoutes);
+    setBuses(initialBuses);
+    
+    // Сохраняем начальные данные
+    await storageService.setItem('routes', initialRoutes);
+    await storageService.setItem('buses', initialBuses);
+    await storageService.setItem('bookingHistory', []);
+    await storageService.setItem('bookedSeats', {});
+    await storageService.setItem('reviews', []);
   };
 
   // Синхронизация данных
@@ -425,7 +650,7 @@ const App = () => {
     if (!isOnline) return;
     
     try {
-      await loadAppData();
+      await loadAppDataSimple();
       showLocalNotification('Данные синхронизированы', 'Информация обновлена');
     } catch (error) {
       console.error('Sync error:', error);
@@ -615,16 +840,6 @@ const App = () => {
     return bookedSeats[key] && bookedSeats[key].includes(seatNumber);
   };
 
-  // Обработка аутентификации
-  const handleAuthSuccess = async (user) => {
-    setCurrentUser(user);
-    setIsLoggedIn(true);
-    setIsAdmin(user.role === 'admin');
-    setStep(1);
-    
-    await loadAppData();
-    showLocalNotification('Добро пожаловать!', `Вы вошли как ${user.firstName}`);
-  };
 
   // Добавление маршрута
   const handleAddRoute = async () => {
@@ -792,140 +1007,154 @@ const App = () => {
       alert('Ошибка при добавлении рейса');
     }
   };
- 
-  // Завершение бронирования
-  const completeBooking = async () => {
+  const loadUserDataByPhone = async (phone) => {
     try {
-      const bookingData = {
-        userId: currentUser.id,
-        busId: selectedBus.id,
-        seats: selectedSeats,
-        passenger: {
-          firstName: personalInfo.firstName,
-          lastName: personalInfo.lastName,
-          phone: personalInfo.phone
-        },
-        totalAmount: calculateTotalPrice(),
-        date: date,
-        from: from,
-        to: to,
-        departureTime: selectedBus.departureTime,
-        arrivalTime: selectedBus.arrivalTime,
-        busNumber: selectedBus.busNumber
-      };
- 
-      if (isOnline) {
-        const response = await bookingsAPI.create(bookingData);
-        
-        const newBooking = {
-          ...response.data,
-          status: 'upcoming',
-          stops: routes.find(r => r.id === selectedBus.routeId).stops
-        };
-        
-        setBookingHistory(prevHistory => [newBooking, ...prevHistory]);
-      } else {
-        // Офлайн режим
-        const newBooking = {
-          id: Date.now(),
-          ...bookingData,
-          status: 'upcoming',
-          createdAt: new Date().toISOString(),
-          stops: routes.find(r => r.id === selectedBus.routeId).stops,
-          passenger: `${personalInfo.firstName} ${personalInfo.lastName}`,
-          price: calculateTotalPrice(),
-          currency: routes.find(r => r.id === selectedBus.routeId).currency,
-          duration: routes.find(r => r.id === selectedBus.routeId).duration
-        };
-        
-        setBookingHistory(prevHistory => [newBooking, ...prevHistory]);
+      // Проверяем историю изменений номеров
+      const phoneHistory = await storageService.getItem('phoneHistory', {});
+      let userId = null;
+  
+      // Ищем по текущему номеру
+      const directUser = registeredUsers.find(u => u.phone === phone);
+      if (directUser) {
+        userId = directUser.id;
       }
- 
-      // Обновляем забронированные места
-      const outboundKey = `${selectedBus.id}-${date}`;
-      setBookedSeats(prevBookedSeats => ({
-        ...prevBookedSeats,
-        [outboundKey]: [...(prevBookedSeats[outboundKey] || []), ...selectedSeats]
-      }));
- 
-      // Обновляем доступные места в автобусе
-      const updatedBuses = { ...buses };
-      const busesForDate = [...(updatedBuses[date] || [])];
-      const busIndex = busesForDate.findIndex(b => b.id === selectedBus.id);
- 
-      if (busIndex !== -1) {
-        busesForDate[busIndex] = {
-          ...busesForDate[busIndex],
-          availableSeats: busesForDate[busIndex].availableSeats - selectedSeats.length
-        };
-        updatedBuses[date] = busesForDate;
-        setBuses(updatedBuses);
-      }
- 
-      // Обработка обратного билета
-      if (tripType === 'round-trip' && returnBus && returnSeats.length > 0) {
-        const returnBookingData = {
-          ...bookingData,
-          busId: returnBus.id,
-          seats: returnSeats,
-          date: returnDate,
-          from: to,
-          to: from,
-          departureTime: returnBus.departureTime,
-          arrivalTime: returnBus.arrivalTime,
-          busNumber: returnBus.busNumber
-        };
- 
-        if (isOnline) {
-          const returnResponse = await bookingsAPI.create(returnBookingData);
-          const returnBooking = {
-            ...returnResponse.data,
-            status: 'upcoming',
-            stops: routes.find(r => r.id === returnBus.routeId).stops
-          };
-          setBookingHistory(prevHistory => [returnBooking, ...prevHistory]);
-        } else {
-          const returnBooking = {
-            id: Date.now() + 1,
-            ...returnBookingData,
-            status: 'upcoming',
-            createdAt: new Date().toISOString(),
-            stops: routes.find(r => r.id === returnBus.routeId).stops,
-            passenger: `${personalInfo.firstName} ${personalInfo.lastName}`,
-            price: calculateTotalPrice() / 2,
-            currency: routes.find(r => r.id === returnBus.routeId).currency,
-            duration: routes.find(r => r.id === returnBus.routeId).duration
-          };
-          setBookingHistory(prevHistory => [returnBooking, ...prevHistory]);
-        }
- 
-        const returnKey = `${returnBus.id}-${returnDate}`;
-        setBookedSeats(prevBookedSeats => ({
-          ...prevBookedSeats,
-          [returnKey]: [...(prevBookedSeats[returnKey] || []), ...returnSeats]
-        }));
- 
-        const returnBusesForDate = [...(updatedBuses[returnDate] || [])];
-        const returnBusIndex = returnBusesForDate.findIndex(b => b.id === returnBus.id);
- 
-        if (returnBusIndex !== -1) {
-          returnBusesForDate[returnBusIndex] = {
-            ...returnBusesForDate[returnBusIndex],
-            availableSeats: returnBusesForDate[returnBusIndex].availableSeats - returnSeats.length
-          };
-          updatedBuses[returnDate] = returnBusesForDate;
-          setBuses(updatedBuses);
+  
+      // Ищем по истории изменений номеров
+      if (!userId) {
+        for (const [newPhone, history] of Object.entries(phoneHistory)) {
+          if (history.previousPhone === phone || newPhone === phone) {
+            userId = history.userId;
+            break;
+          }
         }
       }
- 
-      showLocalNotification('Билет забронирован!', 'Ваше бронирование подтверждено');
-      setStep(6);
+  
+      if (userId) {
+        // Загружаем все данные пользователя
+        const userBookings = bookingHistory.filter(b => b.userId === userId);
+        const userReviews = reviews.filter(r => r.userId === userId);
+        
+        console.log(`📱 Loading data for user ${userId}:`, {
+          bookings: userBookings.length,
+          reviews: userReviews.length
+        });
+  
+        return {
+          userId,
+          bookings: userBookings,
+          reviews: userReviews
+        };
+      }
+  
+      return null;
     } catch (error) {
-      console.error('Booking error:', error);
-      alert('Ошибка при бронировании. Попробуйте снова.');
+      console.error('Error loading user data by phone:', error);
+      return null;
     }
   };
- 
+  // Завершение бронирования
+// Сохранение после успешного входа
+const handleAuthSuccess = async (user) => {
+  console.log('🔐 Auth success:', user);
+  
+  try {
+    // Проверяем, есть ли данные по этому номеру (включая старые номера)
+    const existingData = await loadUserDataByPhone(user.phone);
+    
+    if (existingData && existingData.userId !== user.id) {
+      // Пользователь входит с номером, который принадлежал другому аккаунту
+      // Мержим данные
+      console.log('🔗 Merging user data from previous phone number');
+      
+      const mergedBookings = [
+        ...bookingHistory.filter(b => b.userId === user.id),
+        ...existingData.bookings.map(b => ({ ...b, userId: user.id }))
+      ];
+      
+      const mergedReviews = [
+        ...reviews.filter(r => r.userId === user.id),
+        ...existingData.reviews.map(r => ({ ...r, userId: user.id }))
+      ];
+
+      setBookingHistory(mergedBookings);
+      setReviews(mergedReviews);
+      
+      await storageService.setItem('bookingHistory', mergedBookings);
+      await storageService.setItem('reviews', mergedReviews);
+    }
+
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    setIsAdmin(user.role === 'admin');
+    
+    await storageService.setItem('currentUser', user);
+    await storageService.setItem('authToken', 'user_token_' + user.id + '_' + Date.now());
+    
+    await loadAppDataSimple();
+    
+    setStep(1);
+    
+    if (showLocalNotification) {
+      showLocalNotification(t('welcome'), `${t('welcome')}, ${user.firstName}!`);
+    }
+    
+  } catch (error) {
+    console.error('Auth success error:', error);
+    alert(t('error'));
+  }
+};
+// Сохранение после создания бронирования
+const completeBooking = async () => {
+  try {
+    console.log('💳 Completing booking...');
+    
+    const newBooking = {
+      id: Date.now(),
+      userId: currentUser.id,
+      busId: selectedBus.id,
+      seats: selectedSeats,
+      passenger: `${personalInfo.firstName} ${personalInfo.lastName}`,
+      phone: personalInfo.phone,
+      totalAmount: calculateTotalPrice(),
+      date: date,
+      from: from,
+      to: to,
+      departureTime: selectedBus.departureTime,
+      arrivalTime: selectedBus.arrivalTime,
+      busNumber: selectedBus.busNumber,
+      status: 'upcoming',
+      createdAt: new Date().toISOString(),
+      stops: routes.find(r => r.id === selectedBus.routeId).stops,
+      price: calculateTotalPrice(),
+      currency: routes.find(r => r.id === selectedBus.routeId).currency,
+      duration: routes.find(r => r.id === selectedBus.routeId).duration
+    };
+
+    console.log('📝 New booking:', newBooking);
+
+    // Обновляем состояние
+    const updatedHistory = [newBooking, ...bookingHistory];
+    setBookingHistory(updatedHistory);
+    
+    // Сохраняем в хранилище
+    await storageService.setItem('bookingHistory', updatedHistory);
+
+    // Обновляем забронированные места
+    const outboundKey = `${selectedBus.id}-${date}`;
+    const updatedBookedSeats = {
+      ...bookedSeats,
+      [outboundKey]: [...(bookedSeats[outboundKey] || []), ...selectedSeats]
+    };
+    setBookedSeats(updatedBookedSeats);
+    await storageService.setItem('bookedSeats', updatedBookedSeats);
+
+    showLocalNotification('Билет забронирован!', 'Ваше бронирование подтверждено');
+    setStep(6);
+  } catch (error) {
+    console.error('Booking error:', error);
+    alert('Ошибка при бронировании. Попробуйте снова.');
+  }
+};
   // Навигационные функции
   const goBack = () => {
     if (step > 0) {
@@ -1037,7 +1266,7 @@ const App = () => {
                                 className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${language === lang ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'
                                   }`}
                                 onClick={() => {
-                                  setLanguage(lang);
+                                  changeLanguage(lang);
                                   setShowLanguageSelector(false);
                                 }}
                               >
@@ -1071,6 +1300,12 @@ const App = () => {
                     >
                       {t.allBookings}
                     </button>
+                    <button
+    className="bg-white bg-opacity-20 backdrop-blur-sm text-white rounded-lg py-2 px-4 text-sm font-medium hover:bg-opacity-30 transition-all duration-200"
+    onClick={() => setStep(12)}
+  >
+    👥 Пользователи
+  </button>
                   </div>
                 </div>
               )}
@@ -1189,26 +1424,125 @@ const App = () => {
                 </div>
               </div>
  
-              {/* Популярные маршруты */}
-              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold mb-4">Популярные маршруты</h3>
-                <div className="space-y-3">
-                  <button
-                    onClick={() => setFrom('Бишкек') || setTo('Каракол')}
-                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <span>Бишкек → Каракол</span>
-                    <span className="text-blue-600 font-medium">600 сом</span>
-                  </button>
-                  <button
-                    onClick={() => setFrom('Каракол') || setTo('Бишкек')}
-                    className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                  >
-                    <span>Каракол → Бишкек</span>
-                    <span className="text-blue-600 font-medium">600 сом</span>
-                  </button>
-                </div>
-              </div>
+<div className="space-y-4">
+  {/* Цифровые возможности */}
+  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+    <h3 className="text-lg font-semibold mb-4 flex items-center">
+      <span className="text-2xl mr-2">🚀</span>
+      Цифровое удобство
+    </h3>
+    <div className="grid grid-cols-2 gap-3">
+      <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-xl">
+        <div className="text-2xl mb-2">📱</div>
+        <div className="text-sm font-medium text-blue-800">Билеты в телефоне</div>
+        <div className="text-xs text-blue-600">Никаких очередей</div>
+      </div>
+      <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-xl">
+        <div className="text-2xl mb-2">🔄</div>
+        <div className="text-sm font-medium text-green-800">Автосинхронизация</div>
+        <div className="text-xs text-green-600">На всех устройствах</div>
+      </div>
+      <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-xl">
+        <div className="text-2xl mb-2">🎯</div>
+        <div className="text-sm font-medium text-purple-800">Точное время</div>
+        <div className="text-xs text-purple-600">GPS отслеживание</div>
+      </div>
+      <div className="bg-gradient-to-r from-orange-50 to-orange-100 p-4 rounded-xl">
+        <div className="text-2xl mb-2">💳</div>
+        <div className="text-sm font-medium text-orange-800">Безопасные платежи</div>
+        <div className="text-xs text-orange-600">FreedomPay защита</div>
+      </div>
+    </div>
+  </div>
+
+  {/* Быстрые маршруты */}
+  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+    <h3 className="text-lg font-semibold mb-4 flex items-center">
+      <span className="text-2xl mr-2">⚡</span>
+      Быстрые маршруты
+    </h3>
+    <div className="space-y-3">
+      <button
+        onClick={() => {
+          setFrom('Бишкек');
+          setTo('Каракол');
+          if (isDatePassed(date)) {
+            setDate(getCurrentDate());
+          }
+          setStep(2);
+        }}
+        className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl hover:from-blue-100 hover:to-blue-200 transition-all duration-200"
+      >
+        <div className="flex items-center">
+          <span className="text-2xl mr-3">🏔️</span>
+          <div className="text-left">
+            <div className="font-semibold text-blue-800">Бишкек → Каракол</div>
+            <div className="text-sm text-blue-600">Ежедневно в 23:00</div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-bold text-blue-700">600 сом</div>
+          <div className="text-xs text-blue-500">7ч 10м</div>
+        </div>
+      </button>
+      
+      <button
+        onClick={() => {
+          setFrom('Каракол');
+          setTo('Бишкек');
+          if (isDatePassed(date)) {
+            setDate(getCurrentDate());
+          }
+          setStep(2);
+        }}
+        className="w-full flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-xl hover:from-green-100 hover:to-green-200 transition-all duration-200"
+      >
+        <div className="flex items-center">
+          <span className="text-2xl mr-3">🏙️</span>
+          <div className="text-left">
+            <div className="font-semibold text-green-800">Каракол → Бишкек</div>
+            <div className="text-sm text-green-600">Ежедневно в 21:00</div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-lg font-bold text-green-700">600 сом</div>
+          <div className="text-xs text-green-500">7ч 10м</div>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  {/* Комфорт и безопасность */}
+  <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6">
+    <h3 className="text-lg font-semibold mb-4 flex items-center">
+      <span className="text-2xl mr-2">✨</span>
+      Ваш комфорт
+    </h3>
+    <div className="space-y-3">
+      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-xl mr-3">🛡️</span>
+        <div>
+          <div className="font-medium text-gray-800">Безопасная поездка</div>
+          <div className="text-sm text-gray-600">Лицензированные перевозчики</div>
+        </div>
+      </div>
+      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-xl mr-3">🎵</span>
+        <div>
+          <div className="font-medium text-gray-800">Развлечения в пути</div>
+          <div className="text-sm text-gray-600">Wi-Fi и USB зарядка</div>
+        </div>
+      </div>
+      <div className="flex items-center p-3 bg-gray-50 rounded-lg">
+        <span className="text-xl mr-3">☕</span>
+        <div>
+          <div className="font-medium text-gray-800">Остановки для отдыха</div>
+          <div className="text-sm text-gray-600">Каждые 2-3 часа</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
             </div>
  
             {/* Модальное окно выбора количества пассажиров */}
@@ -1944,7 +2278,7 @@ const App = () => {
                                        ? 'bg-gray-200 border-gray-300 text-gray-400 cursor-not-allowed'
                                        : isSelected
                                          ? 'bg-blue-100 border-blue-500 text-blue-600 shadow-lg transform scale-105'
-                                         : 'bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
+                                         : 'bg-white border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 hover:transform hover:scale-105'
                                        }`}
                                      onClick={() => !isBooked && handleSeatSelection(seatNum)}
                                      disabled={isBooked}
@@ -2540,6 +2874,8 @@ const App = () => {
                          {isAdmin && (
                            <div className="text-yellow-600 text-sm font-medium">👑 Администратор</div>
                          )}
+  
+
                        </div>
                      </div>
                      <button
@@ -2588,7 +2924,7 @@ const App = () => {
                            className={`block w-full text-left p-3 my-1 rounded-lg transition-colors ${language === lang ? 'bg-blue-100 text-blue-600 font-semibold' : 'hover:bg-gray-100'
                              }`}
                            onClick={() => {
-                             setLanguage(lang);
+                            changeLanguage(lang);
                              setShowLanguageSelector(false);
                            }}
                          >
@@ -2651,8 +2987,18 @@ const App = () => {
                          readOnly
                        />
                      </div>
+                     
                    </div>
-
+                   <button
+                className="w-full flex items-center p-4 bg-orange-50 rounded-xl border border-orange-200 hover:bg-orange-100 transition-all duration-200"
+                onClick={() => setShowChangePhoneModal(true)}
+              >
+                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center mr-4">
+                  <Phone size={20} className="text-orange-600" />
+                </div>
+                <span className="text-gray-800 font-medium">Изменить номер телефона</span>
+                <ChevronRight size={20} className="text-gray-400 ml-auto" />
+              </button> 
                    <div>
                      <label className="block text-sm font-medium text-gray-700 mb-2">{t.firstName}</label>
                      <input
@@ -2772,7 +3118,130 @@ const App = () => {
                </div>
              )}
            </div>
+           {showChangePhoneModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">Изменить номер</h3>
+              <button
+                onClick={() => {
+                  setShowChangePhoneModal(false);
+                  setPhoneChangeStep('phone');
+                  setNewPhoneNumber('');
+                  setPhoneOTP('');
+                }}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
+            {phoneChangeStep === 'phone' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Новый номер телефона
+                  </label>
+                  <div className="flex items-center border border-gray-300 rounded-lg px-4 py-3">
+                    <Phone size={20} className="text-gray-400 mr-3" />
+                    <input
+                      type="tel"
+                      className="w-full focus:outline-none"
+                      placeholder="+996 XXX XXX XXX"
+                      value={newPhoneNumber}
+                      onChange={(e) => setNewPhoneNumber(formatPhoneNumber(e.target.value))}
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => {
+                    if (isValidPhone(newPhoneNumber)) {
+                      setPhoneChangeStep('otp');
+                      console.log('SMS sent to:', newPhoneNumber);
+                    } else {
+                      alert('Введите корректный номер телефона');
+                    }
+                  }}
+                  className="w-full bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  Отправить код
+                </button>
+              </div>
+            )}
+
+            {phoneChangeStep === 'otp' && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Код подтверждения для {newPhoneNumber}
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-3 text-center text-2xl tracking-widest"
+                    placeholder="____"
+                    value={phoneOTP}
+                    onChange={(e) => setPhoneOTP(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    maxLength={4}
+                  />
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    Введите код <strong>1234</strong>
+                  </p>
+                </div>
+                
+                <button
+                  onClick={async () => {
+                    if (phoneOTP === '1234') {
+                      // Изменяем номер телефона, сохраняя все данные
+                      const updatedUser = {
+                        ...currentUser,
+                        phone: newPhoneNumber,
+                        phoneChangedAt: new Date().toISOString()
+                      };
+
+                      // Обновляем в зарегистрированных пользователях
+                      const updatedRegisteredUsers = registeredUsers.map(user => 
+                        user.id === currentUser.id ? updatedUser : user
+                      );
+
+                      // Создаем связь старого и нового номера для сохранения истории
+                      const phoneHistory = await storageService.getItem('phoneHistory', {});
+                      phoneHistory[newPhoneNumber] = {
+                        previousPhone: currentUser.phone,
+                        userId: currentUser.id,
+                        changedAt: new Date().toISOString()
+                      };
+
+                      // Сохраняем все изменения
+                      await Promise.all([
+                        storageService.setItem('currentUser', updatedUser),
+                        storageService.setItem('registeredUsers', updatedRegisteredUsers),
+                        storageService.setItem('phoneHistory', phoneHistory)
+                      ]);
+
+                      // Обновляем состояние
+                      setCurrentUser(updatedUser);
+                      setRegisteredUsers(updatedRegisteredUsers);
+
+                      setShowChangePhoneModal(false);
+                      setPhoneChangeStep('phone');
+                      setNewPhoneNumber('');
+                      setPhoneOTP('');
+
+                      showLocalNotification('Номер изменен', 'Номер телефона успешно обновлен');
+                    } else {
+                      alert('Неверный код');
+                    }
+                  }}
+                  className="w-full bg-green-600 text-white rounded-lg py-3 font-semibold hover:bg-green-700 transition-colors"
+                >
+                  Подтвердить изменение
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
            {/* Нижняя навигация */}
            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg">
              <div className="max-w-md mx-auto flex justify-around py-3">
@@ -3716,6 +4185,109 @@ const App = () => {
            </div>
          </div>
        );
+
+       // В switch case добавьте новый экран (case 12):
+
+       case 12: // Управление пользователями (админ)
+       return (
+         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+           <header className="bg-white shadow-sm border-b border-gray-200">
+             <div className="flex items-center px-4 py-4">
+               <button onClick={() => setStep(10)} className="mr-4 p-2 rounded-lg hover:bg-gray-100 transition-colors">
+                 <ArrowLeft size={20} className="text-gray-600" />
+               </button>
+               <h1 className="text-xl font-semibold text-gray-800">Управление пользователями</h1>
+             </div>
+           </header>
+     
+           <div className="max-w-md mx-auto px-4 py-6">
+             <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-6 mb-6">
+               <h2 className="text-lg font-bold mb-4">📊 Статистика</h2>
+               <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-blue-50 rounded-lg p-4 text-center">
+                   <div className="text-2xl font-bold text-blue-600">{registeredUsers.length}</div>
+                   <div className="text-sm text-gray-600">Всего пользователей</div>
+                 </div>
+                 <div className="bg-green-50 rounded-lg p-4 text-center">
+                   <div className="text-2xl font-bold text-green-600">
+                     {registeredUsers.filter(u => u.role === 'admin').length}
+                   </div>
+                   <div className="text-sm text-gray-600">Администраторов</div>
+                 </div>
+               </div>
+             </div>
+     
+             <div className="space-y-4">
+               <h3 className="font-bold text-lg">👥 Зарегистрированные пользователи</h3>
+               
+               {registeredUsers.length > 0 ? (
+                 registeredUsers
+                   .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                   .map((registeredUser, index) => ( 
+                     <div key={registeredUser.id} className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4">
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center">
+                           <div className={`w-12 h-12 rounded-full flex items-center justify-center mr-3 ${
+                             registeredUser.role === 'admin' 
+                               ? 'bg-yellow-100 text-yellow-600' 
+                               : 'bg-blue-100 text-blue-600'
+                           }`}>
+                             {registeredUser.role === 'admin' ? '👑' : '👤'}
+                           </div>
+                           <div>
+                             <div className="font-semibold text-gray-800">
+                               {registeredUser.firstName} {registeredUser.lastName}
+                             </div>
+                             <div className="text-sm text-gray-500">{registeredUser.phone}</div>
+                             {registeredUser.role === 'admin' && (
+                               <div className="text-xs text-yellow-600 font-medium">Администратор</div>
+                             )}
+                            
+                             {registeredUser.phoneChangedAt && (
+                               <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                 <div className="text-xs text-yellow-700">
+                                   📱 Номер изменен: {new Date(registeredUser.phoneChangedAt).toLocaleDateString('ru-RU')}
+                                 </div>
+                               </div>
+                             )}
+                             
+                           </div>
+                         </div>
+                         <div className="text-right">
+                           <div className="text-xs text-gray-500">
+                             {new Date(registeredUser.createdAt).toLocaleDateString('ru-RU')}
+                           </div>
+                           <div className="text-xs text-gray-400">
+                             {new Date(registeredUser.createdAt).toLocaleTimeString('ru-RU')}
+                           </div>
+                         </div>
+                       </div>
+                       
+                       <div className="mt-3 pt-3 border-t border-gray-100">
+                         <div className="flex justify-between text-sm">
+                           <span className="text-gray-600">ID:</span>
+                           <span className="font-mono text-gray-800">{registeredUser.id}</span>
+                         </div>
+                         <div className="flex justify-between text-sm mt-1">
+                           <span className="text-gray-600">Поездок:</span>
+                           <span className="font-semibold text-blue-600">
+                             {bookingHistory.filter(b => b.userId === registeredUser.id).length}
+                           </span>
+                         </div>
+                       </div>
+                     </div>
+                   )) // ← ЗАКРЫВАЮЩАЯ СКОБКА map функции
+               )  : (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center">
+            <div className="text-6xl mb-4">👥</div>
+            <div className="text-xl font-semibold text-gray-600 mb-2">Нет пользователей</div>
+            <div className="text-gray-500">Зарегистрированные пользователи появятся здесь</div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
      default:
        return (
